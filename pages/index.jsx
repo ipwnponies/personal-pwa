@@ -28,6 +28,9 @@ export default function Home({ allPostsData }) {
           <a href="_offline">offline mode</a>
         </p>
       </section>
+      <p>
+        <Link href="/volta/">Volta App</Link>
+      </p>
 
       <section className={`${utilStyles.headingMd} ${utilStyles.padding1px}`}>
         <h2 className={utilStyles.headingLg}>blog</h2>
