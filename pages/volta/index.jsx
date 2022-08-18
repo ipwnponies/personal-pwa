@@ -50,20 +50,20 @@ const voltaApi = async () => {
 };
 
 const colour = {
-  PLUGGED_OUT: 'green',
-  CHARGING: 'red',
-  ACTIVE: 'palegreen',
-  NEEDS_SERVICE: 'salmon',
+  PLUGGED_OUT: 'palegreen',
+  CHARGING: 'salmon',
+  ACTIVE: 'green',
+  NEEDS_SERVICE: 'red',
 };
 
 const displayStation = ({ name, status, counter }) => (
   <p>
-    {`${name} is `}{' '}
-    <span style={{ backgroundColor: colour[status] }}>{status}</span>. It has
-    chargers with:
+    {`${name} is `} <span style={{ color: colour[status] }}>{status}</span>. It
+    has chargers with:
     {Object.entries(counter).map(([key, value]) => (
-      <p>
-        <span style={{ color: colour[key] }}>{key} </span> {value}
+      <p style={{ fontFamily: 'monospace' }}>
+        <span style={{ backgroundColor: colour[key] }}>{key}</span>{' '}
+        <span style={{ fontWeight: 'bolder' }}>{value}</span>{' '}
       </p>
     ))}
   </p>
