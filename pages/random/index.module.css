@@ -1,0 +1,51 @@
+.grid {
+    display: grid;
+    margin: auto;
+    height: 100vh;
+    aspect-ratio: 9/16;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1em;
+    grid-auto-rows: fit-content(10%) repeat(1, 1px) 300px;
+    grid-template-areas:
+        'h h h h'
+        'lowerPrompt lowerInput upperPrompt upperInput'
+        'dicePrompt dicePrompt . diceInput'
+        'roll roll roll roll'
+        'result result result result'
+    ;
+}
+
+.h {
+    grid-area: h;
+}
+.lowerPrompt {
+    grid-area: lowerPrompt;
+}
+.lowerInput{
+    grid-area: lowerInput;
+    max-height: 3rem;
+}
+.upperPrompt {
+    grid-area: upperPrompt;
+}
+.upperInput{
+    grid-area: upperInput;
+    max-height: 3rem;
+}
+.dicePrompt {
+    grid-area: dicePrompt;
+}
+.diceInput {
+    grid-area: diceInput;
+    max-height: 3rem;
+}
+
+
+.roll {
+    grid-area: roll;
+    max-height: unset;
+}
+
+.result {
+    grid-area: result;
+}
