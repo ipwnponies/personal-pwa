@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import PropTypes from 'prop-types';
 import registerServiceWorker from '../components/server-worker';
+import '../styles/global.css';
 
 export default function App({ Component, pageProps }) {
   const { basePath } = useRouter();
