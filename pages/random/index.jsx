@@ -2,10 +2,18 @@ import React, { useState } from 'react';
 
 import styles from './index.module.css';
 
+const rollDice = (lowerBound, upperBound) =>
+  Math.floor(Math.random() * (upperBound - lowerBound + 1)) + lowerBound;
+
 export default function Random() {
   const [lowerBound, setLowerBound] = useState(1);
   const [upperBound, setUpperBound] = useState(6);
   const [numDice, setNumDice] = useState(1);
+
+  const randomValues = [...Array(numDice).keys()].map((_) =>
+    rollDice(lowerBound, upperBound),
+  );
+  const sum = randomValues.reduce((previousValue, i) => previousValue + i);
 
   return (
     <div className={styles.grid}>
@@ -42,11 +50,9 @@ export default function Random() {
       />
       <input type="button" value="Roll" className={styles.roll} />
       <div className={styles.result}>
-        {`Lower bound is ${lowerBound}`}
+        {`Random value is ${randomValues}`}
         <br />
-        {`upper bound is ${upperBound}`}
-        <br />
-        {`number of dice is ${numDice}`}
+        {`Sum is ${sum}`}
       </div>
     </div>
   );
