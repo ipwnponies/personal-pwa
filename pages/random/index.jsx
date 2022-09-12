@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useReducer, useState } from 'react';
 
 import styles from './index.module.css';
 
@@ -9,6 +9,7 @@ export default function Random() {
   const [lowerBound, setLowerBound] = useState(1);
   const [upperBound, setUpperBound] = useState(6);
   const [numDice, setNumDice] = useState(1);
+  const [ignored, forceUpdate] = useReducer((x) => x + 1, 0);
 
   const randomValues = [...Array(numDice).keys()].map((_) =>
     rollDice(lowerBound, upperBound),
@@ -48,7 +49,12 @@ export default function Random() {
         value={numDice}
         onChange={(e) => setNumDice(parseInt(e.target.value, 10))}
       />
-      <input type="button" value="Roll" className={styles.roll} />
+      <input
+        type="button"
+        value="Roll"
+        className={styles.roll}
+        onClick={forceUpdate}
+      />
       <div className={styles.result}>
         {`Random value is ${randomValues}`}
         <br />
