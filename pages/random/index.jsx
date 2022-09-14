@@ -1,11 +1,13 @@
 import React, { useReducer, useState } from 'react';
+import { TabList, Tabs, Tab, TabPanel } from 'react-tabs';
 
+import 'react-tabs/style/react-tabs.css';
 import styles from './index.module.css';
 
 const rollDice = (lowerBound, upperBound) =>
   Math.floor(Math.random() * (upperBound - lowerBound + 1)) + lowerBound;
 
-export default function Random() {
+function DiceRoll() {
   const [lowerBound, setLowerBound] = useState(1);
   const [upperBound, setUpperBound] = useState(6);
   const [numDice, setNumDice] = useState(1);
@@ -61,5 +63,22 @@ export default function Random() {
         {`Sum is ${sum}`}
       </div>
     </div>
+  );
+}
+
+export default function Random() {
+  return (
+    <Tabs>
+      <TabList>
+        <Tab>Dice</Tab>
+        <Tab>Choices</Tab>
+      </TabList>
+      <TabPanel>
+        <DiceRoll />
+      </TabPanel>
+      <TabPanel>
+        <p>Placeholder</p>
+      </TabPanel>
+    </Tabs>
   );
 }
