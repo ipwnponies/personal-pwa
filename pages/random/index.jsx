@@ -9,9 +9,9 @@ export default function Random() {
   const [lowerBound, setLowerBound] = useState(1);
   const [upperBound, setUpperBound] = useState(6);
   const [numDice, setNumDice] = useState(1);
-  const [ignored, forceUpdate] = useReducer((x) => x + 1, 0);
+  const [, forceUpdate] = useReducer((x) => x + 1, 0);
 
-  const randomValues = [...Array(numDice).keys()].map((_) =>
+  const randomValues = [...Array(numDice).keys()].map(() =>
     rollDice(lowerBound, upperBound),
   );
   const sum = randomValues.reduce((previousValue, i) => previousValue + i);
