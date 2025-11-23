@@ -18,6 +18,11 @@
 # misc
 .DS_Store
 
+# generated PWA artifacts
+/public/sw.js
+/public/workbox-*.js
+/public/fallback-*.js
+
 # debug
 npm-debug.log*
 yarn-debug.log*
