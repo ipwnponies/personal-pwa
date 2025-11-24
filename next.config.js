@@ -3,11 +3,13 @@ const defaultRuntimeCaching = require('next-pwa/cache');
 
 const runtimeCaching = defaultRuntimeCaching.map((entry) => {
   if (entry.options?.cacheName !== 'others') return entry;
-  const { networkTimeoutSeconds, ...options } = entry.options || {};
   return {
     ...entry,
-    handler: 'CacheFirst',
-    options,
+    handler: 'NetworkFirst',
+    options: {
+      ...(entry.options || {}),
+      networkTimeoutSeconds: 0.1,
+    },
   };
 });
 
