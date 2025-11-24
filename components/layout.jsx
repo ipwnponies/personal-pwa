@@ -9,6 +9,16 @@ import utilStyles from '../styles/utils.module.css';
 
 const name = 'ipwnponies';
 export const siteTitle = 'Next.js Sample Website';
+const siteUrl = (
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : '')
+).replace(/\/+$/, '');
+
+const withSiteUrl = (path = '/') => {
+  const ensuredPath = (path || '/').startsWith('/') ? path || '/' : `/${path}`;
+
+  return siteUrl ? `${siteUrl}${ensuredPath}` : ensuredPath;
+};
 
 function metadata() {
   return (
@@ -20,68 +30,33 @@ function metadata() {
       <meta name="description" content="Best PWA App in the world" />
       <meta name="format-detection" content="telephone=no" />
       <meta name="mobile-web-app-capable" content="yes" />
-      <meta name="msapplication-config" content="/icons/browserconfig.xml" />
       <meta name="msapplication-TileColor" content="#2B5797" />
       <meta name="msapplication-tap-highlight" content="no" />
       <meta name="theme-color" content="#000000" />
 
       <link
         rel="apple-touch-icon"
-        sizes="96x96"
-        href="/icons/android-launchericon-96-96.png"
+        sizes="152x152"
+        href="/icons/apple-touch-icon-152x152.png"
       />
       <link
         rel="apple-touch-icon"
-        sizes="144x144"
-        href="/icons/android-launchericon-144-144.png"
+        sizes="167x167"
+        href="/icons/apple-touch-icon-167x167.png"
       />
       <link
         rel="apple-touch-icon"
-        sizes="192x192"
-        href="/icons/android-launchericon-192-192.png"
+        sizes="180x180"
+        href="/icons/apple-touch-icon-180x180.png"
       />
-      <link
-        rel="apple-touch-icon"
-        sizes="512x512"
-        href="/icons/android-launchericon-512-512.png"
-      />
+      <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 
-      <link
-        rel="icon"
-        type="image/png"
-        sizes="48x48"
-        href="/icons/android-launchericon-48-48.png"
-      />
-      <link
-        rel="icon"
-        type="image/png"
-        sizes="72x72"
-        href="/icons/android-launchericon-72-72.png"
-      />
-      <link
-        rel="icon"
-        type="image/png"
-        sizes="96x96"
-        href="/icons/android-launchericon-96-96.png"
-      />
-      <link
-        rel="icon"
-        type="image/png"
-        sizes="144x144"
-        href="/icons/android-launchericon-144-144.png"
-      />
-      <link
-        rel="icon"
-        type="image/png"
-        sizes="192x192"
-        href="/icons/android-launchericon-192-192.png"
-      />
-      <link
-        rel="icon"
-        type="image/png"
-        sizes="512x512"
-        href="/icons/android-launchericon-512-512.png"
-      />
+      <link rel="icon" type="image/png" sizes="48x48" href="/icons/android-launchericon-48-48.png" />
+      <link rel="icon" type="image/png" sizes="72x72" href="/icons/android-launchericon-72-72.png" />
+      <link rel="icon" type="image/png" sizes="96x96" href="/icons/android-launchericon-96-96.png" />
+      <link rel="icon" type="image/png" sizes="144x144" href="/icons/android-launchericon-144-144.png" />
+      <link rel="icon" type="image/png" sizes="192x192" href="/icons/android-launchericon-192-192.png" />
+      <link rel="icon" type="image/png" sizes="512x512" href="/icons/android-launchericon-512-512.png" />
       <link rel="manifest" href="/manifest.json" />
       <link
         rel="stylesheet"
@@ -89,22 +64,22 @@ function metadata() {
       />
 
       <meta name="twitter:card" content="summary" />
-      <meta name="twitter:url" content="https://yourdomain.com" />
+      <meta name="twitter:url" content={withSiteUrl('')} />
       <meta name="twitter:title" content="PWA App" />
       <meta name="twitter:description" content="Best PWA App in the world" />
       <meta
         name="twitter:image"
-        content="https://yourdomain.com/icons/android-chrome-192x192.png"
+        content={withSiteUrl('/icons/apple-touch-icon.png')}
       />
       <meta name="twitter:creator" content="@DavidWShadow" />
       <meta property="og:type" content="website" />
       <meta property="og:title" content="PWA App" />
       <meta property="og:description" content="Best PWA App in the world" />
       <meta property="og:site_name" content="PWA App" />
-      <meta property="og:url" content="https://yourdomain.com" />
+      <meta property="og:url" content={withSiteUrl('')} />
       <meta
         property="og:image"
-        content="https://yourdomain.com/icons/apple-touch-icon.png"
+        content={withSiteUrl('/icons/apple-touch-icon.png')}
       />
     </>
   );
@@ -114,7 +89,11 @@ export default function Layout({ children, home }) {
   return (
     <div className={styles.container}>
       <Head>
-        <link rel="icon" href="/icons/favicon.ico" />
+        <link
+          rel="icon"
+          type="image/png"
+          href="/icons/android-launchericon-48-48.png"
+        />
         <meta
           name="description"
           content="Learn how to build a personal website using Next.js"
@@ -175,7 +154,7 @@ export default function Layout({ children, home }) {
         <div className={styles.backToHome}>
           <Link href="/">
             {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
-            <a>⬅ BAck to home</a>
+            <a>⬅ Back to home</a>
           </Link>
         </div>
       )}
@@ -184,7 +163,11 @@ export default function Layout({ children, home }) {
 }
 /* eslint-disable react/forbid-prop-types */
 Layout.propTypes = {
-  children: PropTypes.object.isRequired,
-  home: PropTypes.object.isRequired,
+  children: PropTypes.node.isRequired,
+  home: PropTypes.bool,
+};
+
+Layout.defaultProps = {
+  home: false,
 };
 /* eslint-enable react/forbid-prop-types */
