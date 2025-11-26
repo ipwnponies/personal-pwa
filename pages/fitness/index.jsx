@@ -1,120 +1,39 @@
 import React, { useMemo, useState } from 'react';
 
-const rpeChart = {
-  10: {
-    1: 100,
-    2: 95.5,
-    3: 92.2,
-    4: 89.2,
-    5: 86.3,
-    6: 83.7,
-    7: 81.1,
-    8: 78.6,
-    9: 76.2,
-    10: 73.9,
-  },
-  9.5: {
-    1: 97.8,
-    2: 94.5,
-    3: 91.3,
-    4: 88.3,
-    5: 85.7,
-    6: 83.1,
-    7: 80.6,
-    8: 78.2,
-    9: 75.8,
-    10: 73.6,
-  },
-  9: {
-    1: 95.5,
-    2: 92.2,
-    3: 89.2,
-    4: 86.3,
-    5: 83.7,
-    6: 81.1,
-    7: 78.6,
-    8: 76.2,
-    9: 73.9,
-    10: 71.7,
-  },
-  8.5: {
-    1: 92.2,
-    2: 89.2,
-    3: 86.3,
-    4: 83.7,
-    5: 81.1,
-    6: 78.6,
-    7: 76.2,
-    8: 73.9,
-    9: 71.7,
-    10: 69.5,
-  },
-  8: {
-    1: 89.2,
-    2: 86.3,
-    3: 83.7,
-    4: 81.1,
-    5: 78.6,
-    6: 76.2,
-    7: 73.9,
-    8: 71.7,
-    9: 69.5,
-    10: 67.3,
-  },
-  7.5: {
-    1: 86.3,
-    2: 83.7,
-    3: 81.1,
-    4: 78.6,
-    5: 76.2,
-    6: 73.9,
-    7: 71.7,
-    8: 69.5,
-    9: 67.3,
-    10: 65.2,
-  },
-  7: {
-    1: 83.7,
-    2: 81.1,
-    3: 78.6,
-    4: 76.2,
-    5: 73.9,
-    6: 71.7,
-    7: 69.5,
-    8: 67.3,
-    9: 65.2,
-    10: 63.2,
-  },
-  6.5: {
-    1: 81.1,
-    2: 78.6,
-    3: 76.2,
-    4: 73.9,
-    5: 71.7,
-    6: 69.5,
-    7: 67.3,
-    8: 65.2,
-    9: 63.2,
-    10: 61.1,
-  },
-  6: {
-    1: 78.6,
-    2: 76.2,
-    3: 73.9,
-    4: 71.7,
-    5: 69.5,
-    6: 67.3,
-    7: 65.2,
-    8: 63.2,
-    9: 61.1,
-    10: 59.2,
-  },
+const rpeToRirLookup = {
+  10: 0,
+  9.5: 0.5,
+  9: 1,
+  8.5: 1.5,
+  8: 2,
+  7.5: 2.5,
+  7: 3,
+  6.5: 3.5,
+  6: 4,
 };
 
-function getNearestChart(rpe) {
-  const available = Object.keys(rpeChart).map(parseFloat);
-  return available.reduce((prev, current) => {
+function getNearestRir(rpe) {
+  const rpeValues = Object.keys(rpeToRirLookup).map(parseFloat);
+  const closestRpe = rpeValues.reduce((prev, current) => {
     return Math.abs(current - rpe) < Math.abs(prev - rpe) ? current : prev;
+  });
+
+  return { rpe: closestRpe, rir: rpeToRirLookup[closestRpe] };
+}
+
+function calculateOneRmEpley(weight, reps, rir) {
+  const effectiveReps = reps + rir;
+  return weight * (1 + effectiveReps / 30);
+}
+
+function buildRepMaxTable(estimatedOneRm) {
+  return Array.from({ length: 10 }, (_, index) => {
+    const repCount = index + 1;
+    const weightAtRpe10 = estimatedOneRm / (1 + repCount / 30);
+    return {
+      repCount,
+      weight: weightAtRpe10,
+    };
   });
 }
 
@@ -140,25 +59,13 @@ export default function FitnessRpeCalculator() {
       return { error: 'Enter an RPE value between 6 and 10.' };
     }
 
-    const nearestRpe = getNearestChart(rpeNum);
-    const percentAtInput = rpeChart[nearestRpe][repsInt];
-
-    if (!percentAtInput) {
-      return { error: 'No chart data for that repetition and RPE combination.' };
-    }
-
-    const baseEpleyOneRm = weightNum * (1 + repsInt / 30);
-    const estimatedOneRm = baseEpleyOneRm / (percentAtInput / 100);
-    const repMaxes = Object.entries(rpeChart[10]).map(([repCount, percent]) => {
-      return {
-        repCount: Number(repCount),
-        weight: estimatedOneRm * (percent / 100),
-      };
-    });
+    const { rpe: nearestRpe, rir } = getNearestRir(rpeNum);
+    const estimatedOneRm = calculateOneRmEpley(weightNum, repsInt, rir);
+    const repMaxes = buildRepMaxTable(estimatedOneRm);
 
     return {
       nearestRpe,
-      percentAtInput,
+      rir,
       estimatedOneRm,
       repMaxes,
     };
@@ -222,10 +129,9 @@ export default function FitnessRpeCalculator() {
       ) : (
         <section>
           <p style={{ marginBottom: '0.75rem' }}>
-            Using the Epley formula (weight × (1 + reps / 30)) scaled by the nearest RPE
-            chart entry (RPE {calculation.nearestRpe.toFixed(1)} at {repetitions} reps ≈{' '}
-            {calculation.percentAtInput}% of 1RM), your estimated one-rep max is{' '}
-            <strong>{calculation.estimatedOneRm.toFixed(1)} units</strong>.
+            Using the Epley formula with an RPE-to-RIR adjustment (nearest RPE{' '}
+            {calculation.nearestRpe.toFixed(1)} ≈ {calculation.rir.toFixed(1)} reps in reserve),
+            your estimated one-rep max is <strong>{calculation.estimatedOneRm.toFixed(1)} units</strong>.
           </p>
 
           <div style={{ overflowX: 'auto' }}>
