@@ -147,7 +147,8 @@ export default function FitnessRpeCalculator() {
       return { error: 'No chart data for that repetition and RPE combination.' };
     }
 
-    const estimatedOneRm = weightNum / (percentAtInput / 100);
+    const baseEpleyOneRm = weightNum * (1 + repsInt / 30);
+    const estimatedOneRm = baseEpleyOneRm / (percentAtInput / 100);
     const repMaxes = Object.entries(rpeChart[10]).map(([repCount, percent]) => {
       return {
         repCount: Number(repCount),
@@ -221,9 +222,9 @@ export default function FitnessRpeCalculator() {
       ) : (
         <section>
           <p style={{ marginBottom: '0.75rem' }}>
-            Using the nearest chart entry (RPE {calculation.nearestRpe.toFixed(1)} at{' '}
-            {repetitions} reps ≈ {calculation.percentAtInput}% of 1RM), your estimated
-            one-rep max is{' '}
+            Using the Epley formula (weight × (1 + reps / 30)) scaled by the nearest RPE
+            chart entry (RPE {calculation.nearestRpe.toFixed(1)} at {repetitions} reps ≈{' '}
+            {calculation.percentAtInput}% of 1RM), your estimated one-rep max is{' '}
             <strong>{calculation.estimatedOneRm.toFixed(1)} units</strong>.
           </p>
 
