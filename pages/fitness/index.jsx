@@ -12,27 +12,26 @@ const rpeToRirLookup = {
   6: 4,
 };
 
-function getNearestRir(rpe) {
-  const rpeValues = Object.keys(rpeToRirLookup).map(parseFloat);
-  const closestRpe = rpeValues.reduce((prev, current) => {
-    return Math.abs(current - rpe) < Math.abs(prev - rpe) ? current : prev;
-  });
-
-  return { rpe: closestRpe, rir: rpeToRirLookup[closestRpe] };
+function getRirForRpe(rpe) {
+  return { rpe, rir: rpeToRirLookup[rpe] };
 }
 
 function calculateOneRmEpley(weight, reps, rir) {
-  const effectiveReps = reps + rir;
+  const effectiveReps = Math.max(reps + rir - 1, 0);
   return weight * (1 + effectiveReps / 30);
+}
+
+function calculateWeightFromOneRm(oneRm, reps, rir) {
+  const effectiveReps = Math.max(reps + rir - 1, 0);
+  return oneRm / (1 + effectiveReps / 30);
 }
 
 function buildRepMaxTable(estimatedOneRm) {
   return Array.from({ length: 10 }, (_, index) => {
     const repCount = index + 1;
-    const weightAtRpe10 = estimatedOneRm / (1 + repCount / 30);
     return {
       repCount,
-      weight: weightAtRpe10,
+      weight: calculateWeightFromOneRm(estimatedOneRm, repCount, 0),
     };
   });
 }
@@ -59,12 +58,17 @@ export default function FitnessRpeCalculator() {
       return { error: 'Enter an RPE value between 6 and 10.' };
     }
 
-    const { rpe: nearestRpe, rir } = getNearestRir(rpeNum);
+    const { rpe: mappedRpe, rir } = getRirForRpe(rpeNum);
+
+    if (typeof rir !== 'number') {
+      return { error: 'Enter an RPE in 0.5 increments between 6 and 10.' };
+    }
+
     const estimatedOneRm = calculateOneRmEpley(weightNum, repsInt, rir);
     const repMaxes = buildRepMaxTable(estimatedOneRm);
 
     return {
-      nearestRpe,
+      mappedRpe,
       rir,
       estimatedOneRm,
       repMaxes,
@@ -129,9 +133,9 @@ export default function FitnessRpeCalculator() {
       ) : (
         <section>
           <p style={{ marginBottom: '0.75rem' }}>
-            Using the Epley formula with an RPE-to-RIR adjustment (nearest RPE{' '}
-            {calculation.nearestRpe.toFixed(1)} ≈ {calculation.rir.toFixed(1)} reps in reserve),
-            your estimated one-rep max is <strong>{calculation.estimatedOneRm.toFixed(1)} units</strong>.
+            Using the Epley formula with an RPE-to-RIR adjustment (RPE{' '}
+            {calculation.mappedRpe.toFixed(1)} ≈ {calculation.rir.toFixed(1)} reps in reserve), your
+            estimated one-rep max is <strong>{calculation.estimatedOneRm.toFixed(1)} units</strong>.
           </p>
 
           <div style={{ overflowX: 'auto' }}>
