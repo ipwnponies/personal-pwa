@@ -27,7 +27,7 @@ function calculateWeightFromOneRm(oneRm, reps, rir) {
 }
 
 function buildRepMaxTable(estimatedOneRm) {
-  return Array.from({ length: 10 }, (_, index) => {
+  return Array.from({ length: 30 }, (_, index) => {
     const repCount = index + 1;
     return {
       repCount,
@@ -138,7 +138,15 @@ export default function FitnessRpeCalculator() {
             estimated one-rep max is <strong>{calculation.estimatedOneRm.toFixed(1)} units</strong>.
           </p>
 
-          <div style={{ overflowX: 'auto' }}>
+          <div
+            style={{
+              overflowX: 'auto',
+              maxHeight: '360px',
+              overflowY: 'auto',
+              border: '1px solid #eee',
+              borderRadius: '8px',
+            }}
+          >
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
