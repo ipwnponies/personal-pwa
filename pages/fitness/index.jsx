@@ -1,7 +1,11 @@
 import React, { useMemo, useState } from 'react';
 
+const REPETITION_MIN = 1;
+const REPETITION_MAX = 30;
+const REPETITION_RANGE = REPETITION_MAX - REPETITION_MIN + 1;
+
 function epleyRatio(reps, rir) {
-  if (reps < 1) throw new Error("What's the point of 0 reps, get outta here")
+  if (reps < REPETITION_MIN) throw new Error("What's the point of 0 reps, get outta here")
   if (rir < 0) throw new Error("rir must be >= 0");
 
   const effectiveReps = reps + rir
@@ -16,8 +20,8 @@ function calculateWeightFromOneRm(oneRm, reps, rir) {
   return oneRm / epleyRatio(reps, rir);
 }
 function buildRepMaxTable(estimatedOneRm) {
-  return Array.from({ length: 30 }, (_, index) => {
-    const repCount = index + 1;
+  return Array.from({ length: REPETITION_RANGE }, (_, index) => {
+    const repCount = REPETITION_MIN + index;
     return {
       repCount,
       weight: calculateWeightFromOneRm(estimatedOneRm, repCount, 0),
@@ -31,8 +35,12 @@ export default function FitnessRpeCalculator() {
   const [rir, setRir] = useState(2);
 
   const calculation = useMemo(() => {
-    if (!Number.isFinite(repetitions) || repetitions <= 0 || repetitions > 30) {
-      return { error: 'Enter repetitions between 1 and 10.' };
+    if (
+      !Number.isFinite(repetitions) ||
+      repetitions < REPETITION_MIN ||
+      repetitions > REPETITION_MAX
+    ) {
+      return { error: `Enter repetitions between ${REPETITION_MIN} and ${REPETITION_MAX}.` };
     }
 
     if (!Number.isFinite(weight) || weight <= 0) {
@@ -70,11 +78,11 @@ export default function FitnessRpeCalculator() {
         }}
       >
         <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <span>Repetitions (1-30)</span>
+          <span>Repetitions ({REPETITION_MIN}-{REPETITION_MAX})</span>
           <input
             type="number"
-            min="1"
-            max="30"
+            min={REPETITION_MIN}
+            max={REPETITION_MAX}
             value={repetitions}
             onChange={(event) => setRepetitions(Number(event.target.value))}
             style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
@@ -112,7 +120,7 @@ export default function FitnessRpeCalculator() {
         <section>
           <p style={{ marginBottom: '0.75rem' }}>
             Using the Epley formula, your
-            estimated one-rep max is <strong>{calculation.estimatedOneRm.toFixed(1)} units</strong>.
+            estimated one-rep max is <strong>{calculation.estimatedOneRm.toFixed(0)} units</strong>.
           </p>
 
           <div
@@ -142,7 +150,7 @@ export default function FitnessRpeCalculator() {
                       {entry.repCount} rep{entry.repCount > 1 ? 's' : ''}
                     </td>
                     <td style={{ borderBottom: '1px solid #eee', padding: '0.5rem' }}>
-                      {entry.weight.toFixed(1)}
+                      {entry.weight.toFixed(0)}
                     </td>
                   </tr>
                 ))}
