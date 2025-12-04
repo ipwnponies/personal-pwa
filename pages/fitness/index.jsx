@@ -1,31 +1,20 @@
 import React, { useMemo, useState } from 'react';
 
-const rpeToRirLookup = {
-  10: 0,
-  9.5: 0.5,
-  9: 1,
-  8.5: 1.5,
-  8: 2,
-  7.5: 2.5,
-  7: 3,
-  6.5: 3.5,
-  6: 4,
-};
+function epleyRatio(reps, rir) {
+  if (reps < 1) throw new Error("What's the point of 0 reps, get outta here")
+  if (rir < 0) throw new Error("rir must be >= 0");
 
-function getRirForRpe(rpe) {
-  return { rpe, rir: rpeToRirLookup[rpe] };
+  const effectiveReps = reps + rir
+  return 1 + (effectiveReps - 1) / 30;
 }
 
 function calculateOneRmEpley(weight, reps, rir) {
-  const effectiveReps = Math.max(reps + rir - 1, 0);
-  return weight * (1 + effectiveReps / 30);
+  return weight * epleyRatio(reps, rir);
 }
 
 function calculateWeightFromOneRm(oneRm, reps, rir) {
-  const effectiveReps = Math.max(reps + rir - 1, 0);
-  return oneRm / (1 + effectiveReps / 30);
+  return oneRm / epleyRatio(reps, rir);
 }
-
 function buildRepMaxTable(estimatedOneRm) {
   return Array.from({ length: 30 }, (_, index) => {
     const repCount = index + 1;
@@ -39,41 +28,30 @@ function buildRepMaxTable(estimatedOneRm) {
 export default function FitnessRpeCalculator() {
   const [repetitions, setRepetitions] = useState(5);
   const [weight, setWeight] = useState(100);
-  const [rpe, setRpe] = useState(8.5);
+  const [rir, setRir] = useState(2);
 
   const calculation = useMemo(() => {
-    const repsInt = Number(repetitions);
-    const weightNum = Number(weight);
-    const rpeNum = Number(rpe);
-
-    if (!Number.isFinite(repsInt) || repsInt <= 0 || repsInt > 10) {
+    if (!Number.isFinite(repetitions) || repetitions <= 0 || repetitions > 30) {
       return { error: 'Enter repetitions between 1 and 10.' };
     }
 
-    if (!Number.isFinite(weightNum) || weightNum <= 0) {
+    if (!Number.isFinite(weight) || weight <= 0) {
       return { error: 'Enter a working weight greater than 0.' };
     }
 
-    if (!Number.isFinite(rpeNum) || rpeNum < 6 || rpeNum > 10) {
-      return { error: 'Enter an RPE value between 6 and 10.' };
+    if (!Number.isFinite(rir) || rir < 0) {
+      return { error: 'Enter a valid RIR value.' };
     }
 
-    const { rpe: mappedRpe, rir } = getRirForRpe(rpeNum);
-
-    if (typeof rir !== 'number') {
-      return { error: 'Enter an RPE in 0.5 increments between 6 and 10.' };
-    }
-
-    const estimatedOneRm = calculateOneRmEpley(weightNum, repsInt, rir);
+    const estimatedOneRm = calculateOneRmEpley(weight, repetitions, rir);
     const repMaxes = buildRepMaxTable(estimatedOneRm);
 
     return {
-      mappedRpe,
       rir,
       estimatedOneRm,
       repMaxes,
     };
-  }, [rpe, repetitions, weight]);
+  }, [rir, repetitions, weight]);
 
   return (
     <main style={{ maxWidth: '900px', margin: '0 auto', padding: '2rem 1rem' }}>
@@ -92,13 +70,13 @@ export default function FitnessRpeCalculator() {
         }}
       >
         <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <span>Repetitions (1-10)</span>
+          <span>Repetitions (1-30)</span>
           <input
             type="number"
             min="1"
-            max="10"
+            max="30"
             value={repetitions}
-            onChange={(event) => setRepetitions(event.target.value)}
+            onChange={(event) => setRepetitions(Number(event.target.value))}
             style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
           />
         </label>
@@ -109,20 +87,20 @@ export default function FitnessRpeCalculator() {
             type="number"
             min="0"
             value={weight}
-            onChange={(event) => setWeight(event.target.value)}
+            onChange={(event) => setWeight(Number(event.target.value))}
             style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
           />
         </label>
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <span>Exertion rating (RPE 6-10)</span>
+          <span>Exertion rating (RPE 0-10)</span>
           <input
             type="number"
-            min="6"
+            min="0"
             max="10"
             step="0.5"
-            value={rpe}
-            onChange={(event) => setRpe(event.target.value)}
+            value={rir}
+            onChange={(event) => setRir(Number(event.target.value))}
             style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
           />
         </label>
@@ -133,8 +111,7 @@ export default function FitnessRpeCalculator() {
       ) : (
         <section>
           <p style={{ marginBottom: '0.75rem' }}>
-            Using the Epley formula with an RPE-to-RIR adjustment (RPE{' '}
-            {calculation.mappedRpe.toFixed(1)} ≈ {calculation.rir.toFixed(1)} reps in reserve), your
+            Using the Epley formula, your
             estimated one-rep max is <strong>{calculation.estimatedOneRm.toFixed(1)} units</strong>.
           </p>
 
