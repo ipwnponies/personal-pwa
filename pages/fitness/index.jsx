@@ -34,6 +34,16 @@ export default function FitnessRpeCalculator() {
   const [weight, setWeight] = useState(100);
   const [rir, setRir] = useState(2);
 
+  const handleNumberInputChange = (setter) => (event) => {
+    const { value } = event.target;
+    if (value === '') {
+      setter(null);
+      return;
+    }
+
+    setter(Number(value));
+  };
+
   const calculation = useMemo(() => {
     if (
       !Number.isFinite(repetitions) ||
@@ -83,8 +93,8 @@ export default function FitnessRpeCalculator() {
             type="number"
             min={REPETITION_MIN}
             max={REPETITION_MAX}
-            value={repetitions}
-            onChange={(event) => setRepetitions(Number(event.target.value))}
+            value={repetitions ?? ''}
+            onChange={handleNumberInputChange(setRepetitions)}
             style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
           />
         </label>
@@ -94,8 +104,8 @@ export default function FitnessRpeCalculator() {
           <input
             type="number"
             min="0"
-            value={weight}
-            onChange={(event) => setWeight(Number(event.target.value))}
+            value={weight ?? ''}
+            onChange={handleNumberInputChange(setWeight)}
             style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
           />
         </label>
@@ -107,8 +117,8 @@ export default function FitnessRpeCalculator() {
             min="0"
             max="10"
             step="0.5"
-            value={rir}
-            onChange={(event) => setRir(Number(event.target.value))}
+            value={rir ?? ''}
+            onChange={handleNumberInputChange(setRir)}
             style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
           />
         </label>
