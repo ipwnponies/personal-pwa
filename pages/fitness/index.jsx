@@ -91,9 +91,41 @@ export default function FitnessRpeCalculator() {
     };
   }, [rir, repetitions, weight]);
 
+  const estimatedOneRmDisplay = calculation.error ? '--' : formatWeight(calculation.estimatedOneRm);
+  const repetitionDisplay = Number.isFinite(repetitions)
+    ? `${repetitions} rep${repetitions === 1 ? '' : 's'}`
+    : '--';
+  const rpeDisplay = Number.isFinite(rir) ? 10 - rir : '--';
+
   return (
     <main style={{ maxWidth: '960px', margin: '0 auto', padding: '2rem 1rem' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>RPE Rep-Max Calculator</h1>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: '1rem',
+          marginBottom: '1.5rem',
+        }}
+      >
+        <div
+          style={{
+            border: '1px solid #e5e5e5',
+            borderRadius: '8px',
+            padding: '1rem',
+            background: '#fafafa',
+          }}
+        >
+          <p style={{ margin: 0, color: '#555' }}>Estimated 1RM</p>
+          <p style={{ fontSize: '1.8rem', fontWeight: 700, margin: '0.25rem 0 0' }}>
+            {estimatedOneRmDisplay} units
+          </p>
+          <p style={{ margin: '0.35rem 0 0', color: '#777', fontSize: '0.9rem' }}>
+            Based on {repetitionDisplay} @ RPE {rpeDisplay}
+          </p>
+        </div>
+      </div>
 
       <form
         style={{
@@ -144,53 +176,6 @@ export default function FitnessRpeCalculator() {
         <p style={{ color: '#b00020' }}>{calculation.error}</p>
       ) : (
         <section>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-              gap: '1rem',
-              marginBottom: '1rem',
-            }}
-          >
-            <div
-              style={{
-                border: '1px solid #e5e5e5',
-                borderRadius: '8px',
-                padding: '1rem',
-                background: '#fafafa',
-              }}
-            >
-              <p style={{ margin: 0, color: '#555' }}>Estimated 1RM</p>
-              <p style={{ fontSize: '1.8rem', fontWeight: 700, margin: '0.25rem 0 0' }}>
-                {formatWeight(calculation.estimatedOneRm)} units
-              </p>
-              <p style={{ margin: '0.35rem 0 0', color: '#777', fontSize: '0.9rem' }}>
-                Based on {repetitions} rep{repetitions === 1 ? '' : 's'} @ RPE {10 - rir}
-              </p>
-            </div>
-            <div
-              style={{
-                border: '1px solid #e5e5e5',
-                borderRadius: '8px',
-                padding: '1rem',
-                background: '#fafafa',
-              }}
-            >
-              <p style={{ margin: 0, color: '#555' }}>Inputs</p>
-              <ul style={{ margin: '0.35rem 0 0', paddingLeft: '1.25rem', color: '#555' }}>
-                <li>
-                  Weight used: <strong>{formatWeight(weight)}</strong>
-                </li>
-                <li>
-                  Repetitions: <strong>{repetitions}</strong>
-                </li>
-                <li>
-                  RPE: <strong>{10 - rir}</strong>
-                </li>
-              </ul>
-            </div>
-          </div>
-
           <div
             style={{
               display: 'grid',
