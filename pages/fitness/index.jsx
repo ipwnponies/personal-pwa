@@ -94,10 +94,6 @@ export default function FitnessRpeCalculator() {
   return (
     <main style={{ maxWidth: '960px', margin: '0 auto', padding: '2rem 1rem' }}>
       <h1 style={{ marginBottom: '0.5rem' }}>RPE Rep-Max Calculator</h1>
-      <p style={{ marginBottom: '1.5rem', color: '#444' }}>
-        Enter the reps, weight, and RIR of a recent set to estimate your one-rep max and
-        see projected rep-maxes across the rep range.
-      </p>
 
       <form
         style={{
