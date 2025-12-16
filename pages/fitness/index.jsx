@@ -104,6 +104,17 @@ export default function FitnessRpeCalculator() {
         }}
       >
         <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <span>Weight used</span>
+          <input
+            type="number"
+            min="0"
+            value={weight ?? ''}
+            onChange={handleNumberInputChange(setWeight)}
+            style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
+          />
+        </label>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
           <span>Repetitions ({REPETITION_MIN}-{REPETITION_MAX})</span>
           <input
             type="number"
@@ -111,17 +122,6 @@ export default function FitnessRpeCalculator() {
             max={REPETITION_MAX}
             value={repetitions ?? ''}
             onChange={handleNumberInputChange(setRepetitions)}
-            style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
-          />
-        </label>
-
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <span>Weight used</span>
-          <input
-            type="number"
-            min="0"
-            value={weight ?? ''}
-            onChange={handleNumberInputChange(setWeight)}
             style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
           />
         </label>
