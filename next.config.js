@@ -5,6 +5,8 @@ const runtimeCaching = defaultRuntimeCaching.map((entry) => {
   if (entry.options?.cacheName !== 'others') return entry;
   return {
     ...entry,
+    // Keep navigations network-first so dev bundles can reliably load and
+    // unregister service workers when switching between prod and dev.
     handler: 'NetworkFirst',
     options: {
       ...(entry.options || {}),
