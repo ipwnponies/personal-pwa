@@ -33,6 +33,9 @@ export default function Home({ allPostsData }) {
         <p>
           <Link href="/random/">Random App</Link>
         </p>
+        <p>
+          <Link href="/settings">Settings</Link>
+        </p>
       </section>
 
       <section className={`${utilStyles.headingMd} ${utilStyles.padding1px}`}>

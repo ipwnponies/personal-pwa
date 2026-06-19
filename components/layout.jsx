@@ -1,5 +1,4 @@
 import Head from 'next/head';
-import Image from 'next/image';
 import Link from 'next/link';
 import React from 'react';
 import PropTypes from 'prop-types';
@@ -115,13 +114,13 @@ export default function Layout({ children, home }) {
       <header className={styles.header}>
         {home ? (
           <>
-            <Image
-              priority
+            <img
               src="/images/profile.jpg"
               className={utilStyles.borderCircle}
               height={144}
               width={144}
               alt={name}
+              loading="eager"
             />
             <h1 className={utilStyles.heading2Xl}>{name}</h1>
           </>
@@ -130,13 +129,13 @@ export default function Layout({ children, home }) {
             <Link href="/">
               {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
               <a>
-                <Image
-                  priority
+                <img
                   src="/images/profile.jpg"
                   className={utilStyles.borderCircle}
                   height={108}
                   width={108}
                   alt={name}
+                  loading="eager"
                 />
               </a>
             </Link>

@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 8080",
-    "build": "next build --no-lint",
+    "build": "NODE_OPTIONS=\"--require ./scripts/patch-rename.js\" next build --no-lint && node scripts/patch-sw-precache.js",
     "start": "next start --port 8080"
   },
   "dependencies": {

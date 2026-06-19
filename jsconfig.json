@@ -4,7 +4,21 @@
     "target": "es6",
     "checkJs": false
   },
+  "watchOptions": {
+    "fallbackPolling": "dynamicPriority"
+  },
+  "typeAcquisition": {
+    "enable": false
+  },
   "exclude": [
-    "node_modules"
+    "node_modules",
+    ".next",
+    "out",
+    "dist",
+    "build",
+    "coverage",
+    "tmp",
+    "temp",
+    ".git"
   ]
 }
