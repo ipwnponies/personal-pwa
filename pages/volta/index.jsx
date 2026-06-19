@@ -10,7 +10,7 @@ const getStatus = async (setNodes) => {
 const voltaApi = async () => {
   const url = 'https://api.voltaapi.com/v1/pg-graphql';
   const headers = {
-    'X-Api-Key': 'REDACTED',
+    'X-Api-Key': process.env.NEXT_PUBLIC_VOLTA_API_KEY,
     Accept: '*/*',
     'Content-Type': 'application/json',
   };
