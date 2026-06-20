@@ -1,4 +1,5 @@
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import React, { useState } from 'react';
 import Layout, { siteTitle } from '../components/layout';
 import utilStyles from '../styles/utils.module.css';
@@ -22,6 +23,7 @@ const withTimeout = (promise, timeoutMs) => new Promise((resolve, reject) => {
 });
 
 export default function Settings() {
+  const { basePath } = useRouter();
   const [status, setStatus] = useState('');
 
   const checkForUpdates = async () => {
@@ -33,7 +35,7 @@ export default function Settings() {
     setStatus('Checking for updates...');
 
     try {
-      const registration = await navigator.serviceWorker.getRegistration('/');
+      const registration = await navigator.serviceWorker.getRegistration(`${basePath}/`);
       if (!registration) {
         setStatus('No installed app cache found. Open the app once in production first.');
         return;
@@ -41,7 +43,7 @@ export default function Settings() {
 
       const previousWaitingScript = registration.waiting?.scriptURL;
       await withTimeout(registration.update(), UPDATE_CHECK_TIMEOUT_MS);
-      const refreshedRegistration = await navigator.serviceWorker.getRegistration('/');
+      const refreshedRegistration = await navigator.serviceWorker.getRegistration(`${basePath}/`);
 
       const hasFreshWorker = Boolean(
         refreshedRegistration?.installing
@@ -51,7 +53,7 @@ export default function Settings() {
 
       if (hasFreshWorker) {
         setStatus('Update found. Applying update...');
-        window.location.assign('/__sw-reset');
+        window.location.assign(`${basePath}/__sw-reset`);
         return;
       }
 
