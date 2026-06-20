@@ -43,6 +43,7 @@ const runtimeCaching = defaultRuntimeCaching.map((entry) => {
 });
 
 module.exports = withPWA({
+  basePath: process.env.PAGES_BASE_PATH || '',
   images: {
     // Prefer static URLs for offline precache; avoid dynamic /_next/image variants.
     unoptimized: true,
