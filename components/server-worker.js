@@ -26,9 +26,8 @@ const registerServiceWorker = (basePath = '') => {
     return;
   }
 
-  const prefix = basePath || '';
   const register = () => {
-    navigator.serviceWorker.register(`${prefix}/sw.js`, { scope: `${prefix}/` }).catch((registrationError) => {
+    navigator.serviceWorker.register(`${basePath}/sw.js`, { scope: `${basePath}/` }).catch((registrationError) => {
       console.error('SW register failed: ', registrationError);
     });
   };

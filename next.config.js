@@ -15,8 +15,8 @@ const collectPrerenderEntries = (distDir) => {
   const seen = new Set();
 
   const addEntry = (url) => {
-    if (url === '/') return;
-    if (!url || seen.has(url)) return;
+    if (!url || url === '/' || url === '/404' || url === '/500' || url === '/__sw-reset') return;
+    if (seen.has(url)) return;
     seen.add(url);
     entries.push({ url: `${prefix}${url}`, revision: buildId });
   };

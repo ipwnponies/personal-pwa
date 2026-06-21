@@ -14,10 +14,11 @@ const siteUrl = (
   (process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : '')
 ).replace(/\/+$/, '');
 
-const withSiteUrl = (path = '/') => {
+const withSiteUrl = (path = '/', basePath = '') => {
   const ensuredPath = (path || '/').startsWith('/') ? path || '/' : `/${path}`;
 
-  return siteUrl ? `${siteUrl}${ensuredPath}` : ensuredPath;
+  if (siteUrl) return `${siteUrl}${ensuredPath}`;
+  return `${basePath}${ensuredPath}`;
 };
 
 function metadata(basePath) {
@@ -64,22 +65,22 @@ function metadata(basePath) {
       />
 
       <meta name="twitter:card" content="summary" />
-      <meta name="twitter:url" content={withSiteUrl('')} />
+      <meta name="twitter:url" content={withSiteUrl('', basePath)} />
       <meta name="twitter:title" content="PWA App" />
       <meta name="twitter:description" content="Best PWA App in the world" />
       <meta
         name="twitter:image"
-        content={withSiteUrl('/icons/apple-touch-icon.png')}
+        content={withSiteUrl('/icons/apple-touch-icon.png', basePath)}
       />
       <meta name="twitter:creator" content="@DavidWShadow" />
       <meta property="og:type" content="website" />
       <meta property="og:title" content="PWA App" />
       <meta property="og:description" content="Best PWA App in the world" />
       <meta property="og:site_name" content="PWA App" />
-      <meta property="og:url" content={withSiteUrl('')} />
+      <meta property="og:url" content={withSiteUrl('', basePath)} />
       <meta
         property="og:image"
-        content={withSiteUrl('/icons/apple-touch-icon.png')}
+        content={withSiteUrl('/icons/apple-touch-icon.png', basePath)}
       />
     </>
   );
