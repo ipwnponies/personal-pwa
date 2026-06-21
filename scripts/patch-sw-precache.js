@@ -53,10 +53,15 @@ addHtmlRoutes(pagesDir);
 let sw = fs.readFileSync(swPath, 'utf8');
 
 if (basePath) {
+  let rewritten = 0;
   sw = sw.replace(/url:"(\/[^"]*?)"/g, (match, url) => {
     if (url.startsWith(`${basePath}/`)) return match;
+    rewritten += 1;
     return `url:"${basePath}${url}"`;
   });
+  if (rewritten === 0) {
+    console.warn('patch-sw-precache: basePath set but no precache URLs were rewritten — Workbox output format may have changed');
+  }
 }
 
 const marker = 'precacheAndRoute([';

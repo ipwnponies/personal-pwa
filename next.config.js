@@ -15,8 +15,8 @@ const collectPrerenderEntries = (distDir) => {
   const seen = new Set();
 
   const addEntry = (url) => {
-    if (url === '/') return;
-    if (!url || seen.has(url)) return;
+    if (!url || url === '/' || url === '/404' || url === '/500' || url === '/__sw-reset') return;
+    if (seen.has(url)) return;
     seen.add(url);
     entries.push({ url: `${prefix}${url}`, revision: buildId });
   };
@@ -72,7 +72,8 @@ module.exports = withPWA({
       {
         urlPattern: ({ url }) => {
           if (url.origin !== self.location.origin) return false;
-          return url.pathname === '/__sw-reset' || url.pathname === '/__sw-reset/';
+          const bp = self.location.pathname.replace(/\/sw\.js$/, '');
+          return url.pathname === `${bp}/__sw-reset` || url.pathname === `${bp}/__sw-reset/`;
         },
         method: 'GET',
         handler: 'NetworkOnly',
