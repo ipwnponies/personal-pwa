@@ -1,9 +1,10 @@
 const START_URL_CACHE = 'start-url';
-const START_URL = '/';
+const BASE_PATH = self.location.pathname.replace(/\/sw\.js$/, '');
+const START_URL = `${BASE_PATH}/`;
 
 const isStartUrlRequest = (requestUrl) => {
   const url = new URL(requestUrl);
-  return url.origin === self.location.origin && url.pathname === '/';
+  return url.origin === self.location.origin && url.pathname === START_URL;
 };
 
 const getStartUrlCacheRequest = () => new Request(START_URL, { cache: 'no-store' });
@@ -56,7 +57,7 @@ self.addEventListener('fetch', (event) => {
       }
       return network;
     } catch {
-      return caches.match('/_offline');
+      return caches.match(`${BASE_PATH}/_offline`);
     }
   })());
 });

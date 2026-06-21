@@ -72,7 +72,8 @@ module.exports = withPWA({
       {
         urlPattern: ({ url }) => {
           if (url.origin !== self.location.origin) return false;
-          return url.pathname === '/__sw-reset' || url.pathname === '/__sw-reset/';
+          const bp = self.location.pathname.replace(/\/sw\.js$/, '');
+          return url.pathname === `${bp}/__sw-reset` || url.pathname === `${bp}/__sw-reset/`;
         },
         method: 'GET',
         handler: 'NetworkOnly',
