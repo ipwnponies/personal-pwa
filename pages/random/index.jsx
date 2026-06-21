@@ -1,8 +1,83 @@
-import React, { useReducer, useState } from 'react';
+import React, { useCallback, useReducer, useRef, useState } from 'react';
 import { TabList, Tabs, Tab, TabPanel } from 'react-tabs';
 
 import 'react-tabs/style/react-tabs.css';
 import styles from './index.module.css';
+
+const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
+
+const SWIPE_THRESHOLD = 10;
+
+function useSwipeNumber(value, onChange, min, max) {
+  const [editValue, setEditValue] = useState(null);
+  const [savedValue, setSavedValue] = useState(null);
+  const touchRef = useRef(null);
+  const accumulatedRef = useRef(0);
+
+  const isEditing = editValue !== null;
+
+  const handleFocus = useCallback(() => {
+    setSavedValue(value);
+    setEditValue('');
+  }, [value]);
+
+  const handleBlur = useCallback(() => {
+    if (editValue === '' || editValue === null) {
+      onChange(savedValue);
+    } else {
+      const parsed = parseInt(editValue, 10);
+      onChange(Number.isNaN(parsed) ? savedValue : clamp(parsed, min, max));
+    }
+    setEditValue(null);
+    setSavedValue(null);
+  }, [editValue, savedValue, onChange, min, max]);
+
+  const handleChange = useCallback((e) => {
+    setEditValue(e.target.value);
+  }, []);
+
+  const handleTouchStart = useCallback((e) => {
+    touchRef.current = { startY: e.touches[0].clientY, swiping: false };
+    accumulatedRef.current = 0;
+  }, []);
+
+  const handleTouchMove = useCallback(
+    (e) => {
+      if (!touchRef.current) return;
+      const deltaY = touchRef.current.startY - e.touches[0].clientY;
+      if (!touchRef.current.swiping && Math.abs(deltaY) > SWIPE_THRESHOLD) {
+        touchRef.current.swiping = true;
+        e.target.blur();
+      }
+      if (touchRef.current.swiping) {
+        e.preventDefault();
+        const pixelsPerStep = 20;
+        const steps = Math.trunc(deltaY / pixelsPerStep);
+        const delta = steps - accumulatedRef.current;
+        if (delta !== 0) {
+          accumulatedRef.current = steps;
+          onChange((prev) => clamp(prev + delta, min, max));
+        }
+      }
+    },
+    [min, max, onChange],
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    touchRef.current = null;
+  }, []);
+
+  return {
+    inputValue: isEditing ? editValue : value,
+    placeholder: isEditing ? String(savedValue) : undefined,
+    onChange: handleChange,
+    onFocus: handleFocus,
+    onBlur: handleBlur,
+    onTouchStart: handleTouchStart,
+    onTouchMove: handleTouchMove,
+    onTouchEnd: handleTouchEnd,
+  };
+}
 
 const rollDice = (lowerBound, upperBound) =>
   Math.floor(Math.random() * (upperBound - lowerBound + 1)) + lowerBound;
@@ -13,6 +88,10 @@ function DiceRoll() {
   const [numDice, setNumDice] = useState(1);
   const [hasRolled, setHasRolled] = useState(false);
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
+
+  const lower = useSwipeNumber(lowerBound, setLowerBound, 1, 100);
+  const upper = useSwipeNumber(upperBound, setUpperBound, 1, 100);
+  const dice = useSwipeNumber(numDice, setNumDice, 1, 20);
 
   const randomValues = [...Array(numDice).keys()].map(() =>
     rollDice(lowerBound, upperBound),
@@ -32,11 +111,19 @@ function DiceRoll() {
           <input
             id="lowerBound"
             type="number"
-            max="100"
-            min="1"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            min={1}
+            max={100}
             className={styles.boundInput}
-            value={lowerBound}
-            onChange={(e) => setLowerBound(parseInt(e.target.value, 10))}
+            value={lower.inputValue}
+            placeholder={lower.placeholder}
+            onChange={lower.onChange}
+            onFocus={lower.onFocus}
+            onBlur={lower.onBlur}
+            onTouchStart={lower.onTouchStart}
+            onTouchMove={lower.onTouchMove}
+            onTouchEnd={lower.onTouchEnd}
           />
         </div>
         <div className={styles.boundCard}>
@@ -44,11 +131,19 @@ function DiceRoll() {
           <input
             id="upperBound"
             type="number"
-            max="100"
-            min="1"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            min={1}
+            max={100}
             className={styles.boundInput}
-            value={upperBound}
-            onChange={(e) => setUpperBound(parseInt(e.target.value, 10))}
+            value={upper.inputValue}
+            placeholder={upper.placeholder}
+            onChange={upper.onChange}
+            onFocus={upper.onFocus}
+            onBlur={upper.onBlur}
+            onTouchStart={upper.onTouchStart}
+            onTouchMove={upper.onTouchMove}
+            onTouchEnd={upper.onTouchEnd}
           />
         </div>
       </div>
@@ -58,11 +153,19 @@ function DiceRoll() {
         <input
           id="numDice"
           type="number"
-          max="20"
-          min="1"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          min={1}
+          max={20}
           className={styles.settingInput}
-          value={numDice}
-          onChange={(e) => setNumDice(parseInt(e.target.value, 10))}
+          value={dice.inputValue}
+          placeholder={dice.placeholder}
+          onChange={dice.onChange}
+          onFocus={dice.onFocus}
+          onBlur={dice.onBlur}
+          onTouchStart={dice.onTouchStart}
+          onTouchMove={dice.onTouchMove}
+          onTouchEnd={dice.onTouchEnd}
         />
       </div>
 
