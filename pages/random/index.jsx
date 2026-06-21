@@ -7,6 +7,7 @@ import styles from './index.module.css';
 const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
 
 const SWIPE_THRESHOLD = 10;
+const HORIZONTAL_SWIPE_THRESHOLD = 50;
 
 function useSwipeNumber(value, onChange, min, max) {
   const [editValue, setEditValue] = useState(null);
@@ -51,6 +52,7 @@ function useSwipeNumber(value, onChange, min, max) {
       }
       if (touchRef.current.swiping) {
         e.preventDefault();
+        e.stopPropagation();
         const pixelsPerStep = 20;
         const steps = Math.trunc(deltaY / pixelsPerStep);
         const delta = steps - accumulatedRef.current;
@@ -77,6 +79,52 @@ function useSwipeNumber(value, onChange, min, max) {
     onTouchMove: handleTouchMove,
     onTouchEnd: handleTouchEnd,
   };
+}
+
+function useHorizontalSwipe(onSwipeLeft, onSwipeRight) {
+  const touchRef = useRef(null);
+
+  const handleTouchStart = useCallback((e) => {
+    touchRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      decided: false,
+      isHorizontal: false,
+    };
+  }, []);
+
+  const handleTouchMove = useCallback((e) => {
+    if (!touchRef.current) return;
+    const dx = e.touches[0].clientX - touchRef.current.startX;
+    const dy = e.touches[0].clientY - touchRef.current.startY;
+
+    if (!touchRef.current.decided && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+      touchRef.current.decided = true;
+      touchRef.current.isHorizontal = Math.abs(dx) > Math.abs(dy);
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(
+    (e) => {
+      if (!touchRef.current) return;
+      if (!touchRef.current.isHorizontal) {
+        touchRef.current = null;
+        return;
+      }
+      const dx = e.changedTouches[0].clientX - touchRef.current.startX;
+      touchRef.current = null;
+
+      if (Math.abs(dx) < HORIZONTAL_SWIPE_THRESHOLD) return;
+      if (dx > 0) {
+        onSwipeRight();
+      } else {
+        onSwipeLeft();
+      }
+    },
+    [onSwipeLeft, onSwipeRight],
+  );
+
+  return { onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd };
 }
 
 const rollDice = (lowerBound, upperBound) =>
@@ -194,10 +242,32 @@ function DiceRoll() {
   );
 }
 
+const TAB_COUNT = 2;
+
 export default function Random() {
+  const [tabIndex, setTabIndex] = useState(0);
+
+  const swipeLeft = useCallback(() => {
+    setTabIndex((i) => Math.min(i + 1, TAB_COUNT - 1));
+  }, []);
+  const swipeRight = useCallback(() => {
+    setTabIndex((i) => Math.max(i - 1, 0));
+  }, []);
+
+  const pageSwipe = useHorizontalSwipe(swipeLeft, swipeRight);
+
   return (
-    <div className={styles.page}>
-      <Tabs className={styles.tabs}>
+    <div
+      className={styles.page}
+      onTouchStart={pageSwipe.onTouchStart}
+      onTouchMove={pageSwipe.onTouchMove}
+      onTouchEnd={pageSwipe.onTouchEnd}
+    >
+      <Tabs
+        className={styles.tabs}
+        selectedIndex={tabIndex}
+        onSelect={setTabIndex}
+      >
         <TabList className={styles.tabList}>
           <Tab
             className={styles.tab}
