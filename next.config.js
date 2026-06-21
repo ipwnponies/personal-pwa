@@ -4,6 +4,7 @@ const withPWA = require('next-pwa');
 const defaultRuntimeCaching = require('next-pwa/cache');
 
 const collectPrerenderEntries = (distDir) => {
+  const prefix = process.env.PAGES_BASE_PATH || '';
   const manifestPath = path.join(distDir, 'prerender-manifest.json');
   const buildIdPath = path.join(distDir, 'BUILD_ID');
   if (!fs.existsSync(manifestPath) || !fs.existsSync(buildIdPath)) return [];
@@ -17,7 +18,7 @@ const collectPrerenderEntries = (distDir) => {
     if (url === '/') return;
     if (!url || seen.has(url)) return;
     seen.add(url);
-    entries.push({ url, revision: buildId });
+    entries.push({ url: `${prefix}${url}`, revision: buildId });
   };
 
   const routes = manifest?.routes || {};

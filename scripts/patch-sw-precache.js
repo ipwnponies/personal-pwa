@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
+const basePath = process.env.PAGES_BASE_PATH || '';
 const swPath = path.join(__dirname, '..', 'public', 'sw.js');
 const prerenderPath = path.join(__dirname, '..', '.next', 'prerender-manifest.json');
 const pagesDir = path.join(__dirname, '..', '.next', 'server', 'pages');
@@ -18,7 +19,7 @@ const extraEntries = [];
 const addEntry = (url) => {
   if (!url) return;
   if (url === '/' || url === '/404' || url === '/500' || url === '/__sw-reset') return;
-  extraEntries.push({ url, revision: buildId });
+  extraEntries.push({ url: `${basePath}${url}`, revision: buildId });
 };
 
 Object.keys(routes).forEach((route) => {
@@ -49,17 +50,23 @@ const addHtmlRoutes = (dir, relBase = '') => {
 
 addHtmlRoutes(pagesDir);
 
-if (extraEntries.length === 0) process.exit(0);
-
 let sw = fs.readFileSync(swPath, 'utf8');
+
+if (basePath) {
+  sw = sw.replace(/url:"(\/[^"]*?)"/g, (match, url) => {
+    if (url.startsWith(`${basePath}/`)) return match;
+    return `url:"${basePath}${url}"`;
+  });
+}
+
 const marker = 'precacheAndRoute([';
 const start = sw.indexOf(marker);
-if (start === -1) process.exit(0);
+if (start === -1) { fs.writeFileSync(swPath, sw); process.exit(0); }
 
 const arrayStart = start + marker.length;
 const endMarker = '],{ignoreURLParametersMatching:';
 const end = sw.indexOf(endMarker, arrayStart);
-if (end === -1) process.exit(0);
+if (end === -1) { fs.writeFileSync(swPath, sw); process.exit(0); }
 
 const existingChunk = sw.slice(arrayStart, end);
 const existingUrls = new Set(
@@ -67,7 +74,7 @@ const existingUrls = new Set(
 );
 
 const toAdd = extraEntries.filter((entry) => !existingUrls.has(entry.url));
-if (toAdd.length === 0) process.exit(0);
+if (toAdd.length === 0) { fs.writeFileSync(swPath, sw); process.exit(0); }
 
 const serialized = toAdd
   .map((entry) => `{url:"${entry.url}",revision:"${entry.revision}"}`)
