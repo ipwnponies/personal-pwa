@@ -16,7 +16,7 @@ const unregisterServiceWorkers = () => {
   });
 };
 
-const registerServiceWorker = () => {
+const registerServiceWorker = (basePath = '') => {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
     return;
   }
@@ -26,8 +26,9 @@ const registerServiceWorker = () => {
     return;
   }
 
+  const prefix = basePath || '';
   const register = () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((registrationError) => {
+    navigator.serviceWorker.register(`${prefix}/sw.js`, { scope: `${prefix}/` }).catch((registrationError) => {
       console.error('SW register failed: ', registrationError);
     });
   };

@@ -1,5 +1,6 @@
 import Head from 'next/head';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import React from 'react';
 import PropTypes from 'prop-types';
 
@@ -19,7 +20,7 @@ const withSiteUrl = (path = '/') => {
   return siteUrl ? `${siteUrl}${ensuredPath}` : ensuredPath;
 };
 
-function metadata() {
+function metadata(basePath) {
   return (
     <>
       <meta name="application-name" content="PWA App" />
@@ -36,27 +37,27 @@ function metadata() {
       <link
         rel="apple-touch-icon"
         sizes="152x152"
-        href="/icons/apple-touch-icon-152x152.png"
+        href={`${basePath}/icons/apple-touch-icon-152x152.png`}
       />
       <link
         rel="apple-touch-icon"
         sizes="167x167"
-        href="/icons/apple-touch-icon-167x167.png"
+        href={`${basePath}/icons/apple-touch-icon-167x167.png`}
       />
       <link
         rel="apple-touch-icon"
         sizes="180x180"
-        href="/icons/apple-touch-icon-180x180.png"
+        href={`${basePath}/icons/apple-touch-icon-180x180.png`}
       />
-      <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+      <link rel="apple-touch-icon" href={`${basePath}/icons/apple-touch-icon.png`} />
 
-      <link rel="icon" type="image/png" sizes="48x48" href="/icons/android-launchericon-48-48.png" />
-      <link rel="icon" type="image/png" sizes="72x72" href="/icons/android-launchericon-72-72.png" />
-      <link rel="icon" type="image/png" sizes="96x96" href="/icons/android-launchericon-96-96.png" />
-      <link rel="icon" type="image/png" sizes="144x144" href="/icons/android-launchericon-144-144.png" />
-      <link rel="icon" type="image/png" sizes="192x192" href="/icons/android-launchericon-192-192.png" />
-      <link rel="icon" type="image/png" sizes="512x512" href="/icons/android-launchericon-512-512.png" />
-      <link rel="manifest" href="/manifest.json" />
+      <link rel="icon" type="image/png" sizes="48x48" href={`${basePath}/icons/android-launchericon-48-48.png`} />
+      <link rel="icon" type="image/png" sizes="72x72" href={`${basePath}/icons/android-launchericon-72-72.png`} />
+      <link rel="icon" type="image/png" sizes="96x96" href={`${basePath}/icons/android-launchericon-96-96.png`} />
+      <link rel="icon" type="image/png" sizes="144x144" href={`${basePath}/icons/android-launchericon-144-144.png`} />
+      <link rel="icon" type="image/png" sizes="192x192" href={`${basePath}/icons/android-launchericon-192-192.png`} />
+      <link rel="icon" type="image/png" sizes="512x512" href={`${basePath}/icons/android-launchericon-512-512.png`} />
+      <link rel="manifest" href={`${basePath}/manifest.json`} />
       <link
         rel="stylesheet"
         href="https://fonts.googleapis.com/css?family=Roboto:300,400,500"
@@ -85,13 +86,14 @@ function metadata() {
 }
 
 export default function Layout({ children, home }) {
+  const { basePath } = useRouter();
   return (
     <div className={styles.container}>
       <Head>
         <link
           rel="icon"
           type="image/png"
-          href="/icons/android-launchericon-48-48.png"
+          href={`${basePath}/icons/android-launchericon-48-48.png`}
         />
         <meta
           name="description"
@@ -109,13 +111,13 @@ export default function Layout({ children, home }) {
           name="viewport"
           content="minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no, user-scalable=no, viewport-fit=cover"
         />
-        {metadata()}
+        {metadata(basePath)}
       </Head>
       <header className={styles.header}>
         {home ? (
           <>
             <img
-              src="/images/profile.jpg"
+              src={`${basePath}/images/profile.jpg`}
               className={utilStyles.borderCircle}
               height={144}
               width={144}
@@ -130,7 +132,7 @@ export default function Layout({ children, home }) {
               {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
               <a>
                 <img
-                  src="/images/profile.jpg"
+                  src={`${basePath}/images/profile.jpg`}
                   className={utilStyles.borderCircle}
                   height={108}
                   width={108}
