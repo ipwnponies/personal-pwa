@@ -241,6 +241,154 @@ function DiceRoll() {
   );
 }
 
+// eslint-disable-next-line react/prop-types
+function ChoiceRow({ label, weightValue, totalWeight, onChangeLabel, onChangeWeight, onDelete }) {
+  const setWeight = useCallback(
+    (valOrFn) => {
+      const next = typeof valOrFn === 'function' ? valOrFn(weightValue) : valOrFn;
+      onChangeWeight(next);
+    },
+    [weightValue, onChangeWeight],
+  );
+
+  const weight = useSwipeNumber(weightValue, setWeight, 1, 99);
+  const percent = totalWeight > 0 ? Math.round((weightValue / totalWeight) * 100) : 0;
+
+  return (
+    <div className={styles.choiceRow}>
+      <input
+        type="text"
+        className={styles.choiceLabelInput}
+        value={label}
+        onChange={(e) => onChangeLabel(e.target.value)}
+        placeholder="Choice"
+      />
+      <input
+        type="number"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        min={1}
+        max={99}
+        className={styles.choiceWeightInput}
+        value={weight.inputValue}
+        placeholder={weight.placeholder}
+        onChange={weight.onChange}
+        onFocus={weight.onFocus}
+        onBlur={weight.onBlur}
+        onTouchStart={weight.onTouchStart}
+        onTouchMove={weight.onTouchMove}
+        onTouchEnd={weight.onTouchEnd}
+      />
+      <span className={styles.choicePercent}>{percent}%</span>
+      <button type="button" className={styles.choiceDelete} onClick={onDelete}>
+        &times;
+      </button>
+    </div>
+  );
+}
+
+function WeightedChoices() {
+  const [choices, setChoices] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('random-choices');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [result, setResult] = useState(null);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    localStorage.setItem('random-choices', JSON.stringify(choices));
+  }, [choices]);
+
+  const totalWeight = choices.reduce((sum, c) => sum + c.weight, 0);
+  const canPick = choices.filter((c) => c.label.trim()).length >= 2;
+
+  const [ghostKey, setGhostKey] = useState(0);
+
+  const handleGhostBlur = (e) => {
+    const label = e.target.value.trim();
+    if (label) {
+      setChoices((prev) => [...prev, { id: generateId(), label, weight: 1 }]);
+      setGhostKey((k) => k + 1);
+    }
+  };
+
+  const handleChangeLabel = useCallback((id, label) => {
+    setChoices((prev) => prev.map((c) => (c.id === id ? { ...c, label } : c)));
+  }, []);
+
+  const handleChangeWeight = useCallback((id, weight) => {
+    setChoices((prev) => prev.map((c) => (c.id === id ? { ...c, weight } : c)));
+  }, []);
+
+  const handleDelete = useCallback((id) => {
+    setChoices((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  const handlePick = () => {
+    const valid = choices.filter((c) => c.label.trim());
+    if (valid.length < 2) return;
+    const chosen = weightedRandomChoice(valid);
+    const validTotal = valid.reduce((sum, c) => sum + c.weight, 0);
+    setResult({
+      label: chosen.label,
+      percent: Math.round((chosen.weight / validTotal) * 100),
+    });
+  };
+
+  return (
+    <div className={styles.container}>
+      <div className={styles.choicesList}>
+        {choices.map((choice) => (
+          <ChoiceRow
+            key={choice.id}
+            label={choice.label}
+            weightValue={choice.weight}
+            totalWeight={totalWeight}
+            onChangeLabel={(l) => handleChangeLabel(choice.id, l)}
+            onChangeWeight={(w) => handleChangeWeight(choice.id, w)}
+            onDelete={() => handleDelete(choice.id)}
+          />
+        ))}
+        <div className={styles.choiceRow}>
+          <input
+            key={ghostKey}
+            type="text"
+            className={`${styles.choiceLabelInput} ${styles.choiceGhost}`}
+            defaultValue=""
+            onBlur={handleGhostBlur}
+            placeholder="Add choice..."
+          />
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className={`${styles.rollButton} ${!canPick ? styles.rollButtonDisabled : ''}`}
+        onClick={handlePick}
+        disabled={!canPick}
+      >
+        PICK
+      </button>
+
+      {result && (
+        <div className={styles.result}>
+          <span className={styles.resultBadge}>{result.label}</span>
+          <div className={styles.resultSum}>{result.percent}% chance</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const TAB_COUNT = 2;
 
 export default function Random() {
@@ -285,7 +433,7 @@ export default function Random() {
           <DiceRoll />
         </TabPanel>
         <TabPanel>
-          <p className={styles.placeholder}>Coming soon</p>
+          <WeightedChoices />
         </TabPanel>
       </Tabs>
     </div>
