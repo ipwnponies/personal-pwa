@@ -1,10 +1,9 @@
-import React, { useCallback, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { TabList, Tabs, Tab, TabPanel } from 'react-tabs';
 
 import 'react-tabs/style/react-tabs.css';
 import styles from './index.module.css';
-
-const clamp = (val, min, max) => Math.min(max, Math.max(min, val));
+import { clamp, weightedRandomChoice, generateId } from '../../lib/random';
 
 const SWIPE_THRESHOLD = 10;
 const HORIZONTAL_SWIPE_THRESHOLD = 50;
