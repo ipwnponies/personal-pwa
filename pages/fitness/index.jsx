@@ -1,56 +1,16 @@
 import React, { useMemo, useState } from 'react';
+import {
+  REPETITION_MIN,
+  REPETITION_MAX,
+  calculateOneRmEpley,
+  formatWeight,
+  buildPercentageTable,
+  buildRepMaxTable,
+} from './epley';
 
-const REPETITION_MIN = 1;
-const REPETITION_MAX = 30;
-const REPETITION_RANGE = REPETITION_MAX - REPETITION_MIN + 1;
-
-function epleyRatio(reps, rir) {
-  if (reps < REPETITION_MIN) throw new Error("What's the point of 0 reps, get outta here")
-  if (rir < 0) throw new Error("rir must be >= 0");
-
-  const effectiveReps = reps + rir
-  return 1 + (effectiveReps - 1) / 30;
-}
-
-function calculateOneRmEpley(weight, reps, rir) {
-  return weight * epleyRatio(reps, rir);
-}
-
-function calculateWeightFromOneRm(oneRm, reps, rir) {
-  return oneRm / epleyRatio(reps, rir);
-}
-
-function formatWeight(weight) {
-  return Number.isFinite(weight) ? weight.toFixed(0) : '-';
-}
-
-function buildPercentageTable(estimatedOneRm) {
-  const percentages = [];
-
-  for (let percentage = 100; percentage >= 50; percentage -= 5) {
-    percentages.push({
-      percentage,
-      weight: (estimatedOneRm * percentage) / 100,
-    });
-  }
-
-  return percentages;
-}
-
-function buildRepMaxTable(estimatedOneRm) {
-  return Array.from({ length: REPETITION_RANGE }, (_, index) => {
-    const repCount = REPETITION_MIN + index;
-    return {
-      repCount,
-      weight: calculateWeightFromOneRm(estimatedOneRm, repCount, 0),
-    };
-  });
-}
-
-export default function FitnessRpeCalculator() {
+export default function FitnessCalculator() {
   const [repetitions, setRepetitions] = useState(5);
   const [weight, setWeight] = useState(100);
-  const [rir, setRir] = useState(2);
 
   const handleNumberInputChange = (setter) => (event) => {
     const { value } = event.target;
@@ -75,31 +35,25 @@ export default function FitnessRpeCalculator() {
       return { error: 'Enter a working weight greater than 0.' };
     }
 
-    if (!Number.isFinite(rir) || rir < 0) {
-      return { error: 'Enter a valid RIR value.' };
-    }
-
-    const estimatedOneRm = calculateOneRmEpley(weight, repetitions, rir);
+    const estimatedOneRm = calculateOneRmEpley(weight, repetitions);
     const repMaxes = buildRepMaxTable(estimatedOneRm);
     const percentageBreakdown = buildPercentageTable(estimatedOneRm);
 
     return {
-      rir,
       estimatedOneRm,
       repMaxes,
       percentageBreakdown,
     };
-  }, [rir, repetitions, weight]);
+  }, [repetitions, weight]);
 
   const estimatedOneRmDisplay = calculation.error ? '--' : formatWeight(calculation.estimatedOneRm);
   const repetitionDisplay = Number.isFinite(repetitions)
     ? `${repetitions} rep${repetitions === 1 ? '' : 's'}`
     : '--';
-  const rpeDisplay = Number.isFinite(rir) ? 10 - rir : '--';
 
   return (
     <main style={{ maxWidth: '960px', margin: '0 auto', padding: '2rem 1rem' }}>
-      <h1 style={{ marginBottom: '0.5rem' }}>RPE Rep-Max Calculator</h1>
+      <h1 style={{ marginBottom: '0.5rem' }}>Rep-Max Calculator</h1>
 
       <div
         style={{
@@ -122,7 +76,7 @@ export default function FitnessRpeCalculator() {
             {estimatedOneRmDisplay} units
           </p>
           <p style={{ margin: '0.35rem 0 0', color: '#777', fontSize: '0.9rem' }}>
-            Based on {repetitionDisplay} @ RPE {rpeDisplay}
+            Based on {repetitionDisplay}
           </p>
         </div>
       </div>
@@ -158,18 +112,6 @@ export default function FitnessRpeCalculator() {
           />
         </label>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <span>Reps in reserve (RIR 0-10)</span>
-          <input
-            type="number"
-            min="0"
-            max="10"
-            step="0.5"
-            value={rir ?? ''}
-            onChange={handleNumberInputChange(setRir)}
-            style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
-          />
-        </label>
       </form>
 
       {calculation.error ? (
@@ -196,14 +138,14 @@ export default function FitnessRpeCalculator() {
               <div style={{ padding: '0.75rem', borderBottom: '1px solid #f2f2f2' }}>
                 <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Projected Rep Maxes</h2>
                 <p style={{ margin: '0.25rem 0 0', color: '#666', fontSize: '0.9rem' }}>
-                  Reps taken to RPE 10 using the estimated 1RM.
+                  Reps taken to failure using the estimated 1RM.
                 </p>
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
                     <th style={{ textAlign: 'left', borderBottom: '2px solid #ddd', padding: '0.5rem' }}>
-                      Reps @ RPE 10
+                      Reps to Failure
                     </th>
                     <th style={{ textAlign: 'left', borderBottom: '2px solid #ddd', padding: '0.5rem' }}>
                       Estimated Weight
