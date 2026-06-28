@@ -6,7 +6,7 @@ import {
   formatWeight,
   buildPercentageTable,
   buildRepMaxTable,
-} from './epley';
+} from '../../lib/epley';
 
 export default function FitnessCalculator() {
   const [repetitions, setRepetitions] = useState(5);
