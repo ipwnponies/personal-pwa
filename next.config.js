@@ -44,7 +44,11 @@ const runtimeCaching = defaultRuntimeCaching.map((entry) => {
 });
 
 module.exports = withPWA({
+  output: 'export',
   basePath: process.env.PAGES_BASE_PATH || '',
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   images: {
     // Prefer static URLs for offline precache; avoid dynamic /_next/image variants.
     unoptimized: true,
