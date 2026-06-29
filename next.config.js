@@ -43,7 +43,7 @@ const runtimeCaching = defaultRuntimeCaching.map((entry) => {
   };
 });
 
-// Stopgap: pinned to Next 12 + next-pwa 5. next-pwa is unmaintained.
+// Stopgap: pinned to Next 14 + next-pwa 5. next-pwa is unmaintained.
 // TODO: migrate to Serwist (@serwist/next) to unpin Next.js.
 module.exports = withPWA({
   dest: 'public',
@@ -118,6 +118,7 @@ module.exports = withPWA({
     ...runtimeCaching,
   ],
 })({
+  output: 'export',
   basePath: process.env.PAGES_BASE_PATH || '',
   images: {
     unoptimized: true,

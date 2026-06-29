@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const basePath = process.env.PAGES_BASE_PATH || '';
-const swPath = path.join(__dirname, '..', 'public', 'sw.js');
+const swPath = path.join(__dirname, '..', 'out', 'sw.js');
 const prerenderPath = path.join(__dirname, '..', '.next', 'prerender-manifest.json');
 const pagesDir = path.join(__dirname, '..', '.next', 'server', 'pages');
 const buildIdPath = path.join(__dirname, '..', '.next', 'BUILD_ID');

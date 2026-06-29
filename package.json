@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 8080",
-    "build": "NODE_OPTIONS=\"--require ./scripts/patch-rename.js\" next build --no-lint && node scripts/patch-sw-precache.js && next export",
+    "build": "NODE_OPTIONS=\"--require ./scripts/patch-rename.js\" next build --no-lint && node scripts/patch-sw-precache.js",
     "start": "next start --port 8080",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -12,7 +12,7 @@
     "date-fns": "^2.28.0",
     "gray-matter": "^4.0.3",
     "local-ssl-proxy": "^1.2.3",
-    "next": "^12.1.6",
+    "next": "^14",
     "next-pwa": "^5.5.4",
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
@@ -22,10 +22,6 @@
     "remark-html": "^15.0.1",
     "typescript": "^4.7.4",
     "typescript-language-server": "^0.11.1"
-  },
-  "overrides": {
-    "workbox-webpack-plugin": "6.5.4",
-    "workbox-build": "6.5.4"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
