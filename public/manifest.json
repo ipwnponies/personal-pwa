@@ -38,7 +38,7 @@
       "name": "Zero-to-Hero App",
       "short_name": "Fitness",
       "description": "Jump straight to the 1RM fitness calculator",
-      "url": "fitness/",
+      "url": "fitness",
       "icons": [
         {
           "src": "icons/android-launchericon-96-96.png",
