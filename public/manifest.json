@@ -41,7 +41,7 @@
       "url": "fitness",
       "icons": [
         {
-          "src": "icons/android-launchericon-96-96.png",
+          "src": "icons/fitness-launchericon-96-96.png",
           "sizes": "96x96",
           "type": "image/png"
         }

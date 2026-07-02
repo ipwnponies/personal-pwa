@@ -27,6 +27,8 @@ export function pwaMetaTags(basePath, options = {}) {
     appName = 'PWA App',
     description = 'Best PWA App in the world',
     path = '',
+    iconPrefix = 'android-launchericon',
+    appleIconPrefix = 'apple-touch-icon',
   } = options;
 
   return (
@@ -45,26 +47,26 @@ export function pwaMetaTags(basePath, options = {}) {
       <link
         rel="apple-touch-icon"
         sizes="152x152"
-        href={`${basePath}/icons/apple-touch-icon-152x152.png`}
+        href={`${basePath}/icons/${appleIconPrefix}-152x152.png`}
       />
       <link
         rel="apple-touch-icon"
         sizes="167x167"
-        href={`${basePath}/icons/apple-touch-icon-167x167.png`}
+        href={`${basePath}/icons/${appleIconPrefix}-167x167.png`}
       />
       <link
         rel="apple-touch-icon"
         sizes="180x180"
-        href={`${basePath}/icons/apple-touch-icon-180x180.png`}
+        href={`${basePath}/icons/${appleIconPrefix}-180x180.png`}
       />
-      <link rel="apple-touch-icon" href={`${basePath}/icons/apple-touch-icon.png`} />
+      <link rel="apple-touch-icon" href={`${basePath}/icons/${appleIconPrefix}.png`} />
 
-      <link rel="icon" type="image/png" sizes="48x48" href={`${basePath}/icons/android-launchericon-48-48.png`} />
-      <link rel="icon" type="image/png" sizes="72x72" href={`${basePath}/icons/android-launchericon-72-72.png`} />
-      <link rel="icon" type="image/png" sizes="96x96" href={`${basePath}/icons/android-launchericon-96-96.png`} />
-      <link rel="icon" type="image/png" sizes="144x144" href={`${basePath}/icons/android-launchericon-144-144.png`} />
-      <link rel="icon" type="image/png" sizes="192x192" href={`${basePath}/icons/android-launchericon-192-192.png`} />
-      <link rel="icon" type="image/png" sizes="512x512" href={`${basePath}/icons/android-launchericon-512-512.png`} />
+      <link rel="icon" type="image/png" sizes="48x48" href={`${basePath}/icons/${iconPrefix}-48-48.png`} />
+      <link rel="icon" type="image/png" sizes="72x72" href={`${basePath}/icons/${iconPrefix}-72-72.png`} />
+      <link rel="icon" type="image/png" sizes="96x96" href={`${basePath}/icons/${iconPrefix}-96-96.png`} />
+      <link rel="icon" type="image/png" sizes="144x144" href={`${basePath}/icons/${iconPrefix}-144-144.png`} />
+      <link rel="icon" type="image/png" sizes="192x192" href={`${basePath}/icons/${iconPrefix}-192-192.png`} />
+      <link rel="icon" type="image/png" sizes="512x512" href={`${basePath}/icons/${iconPrefix}-512-512.png`} />
       <link rel="manifest" href={`${basePath}/${manifestPath}`} />
       <link
         rel="stylesheet"

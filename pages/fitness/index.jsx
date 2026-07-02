@@ -63,6 +63,8 @@ export default function FitnessCalculator() {
           appName: 'Zero-to-Hero App',
           description: 'Estimate your one-rep max and rep-max training percentages',
           path: '/fitness',
+          iconPrefix: 'fitness-launchericon',
+          appleIconPrefix: 'fitness-apple-touch-icon',
         })}
       </Head>
       <main style={{ maxWidth: '960px', margin: '0 auto', padding: '2rem 1rem' }}>
