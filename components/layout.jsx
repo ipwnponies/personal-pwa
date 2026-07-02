@@ -21,14 +21,21 @@ const withSiteUrl = (path = '/', basePath = '') => {
   return `${basePath}${ensuredPath}`;
 };
 
-function metadata(basePath) {
+export function pwaMetaTags(basePath, options = {}) {
+  const {
+    manifestPath = 'manifest.json',
+    appName = 'PWA App',
+    description = 'Best PWA App in the world',
+    path = '',
+  } = options;
+
   return (
     <>
-      <meta name="application-name" content="PWA App" />
+      <meta name="application-name" content={appName} />
       <meta name="apple-mobile-web-app-capable" content="yes" />
       <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-      <meta name="apple-mobile-web-app-title" content="PWA App" />
-      <meta name="description" content="Best PWA App in the world" />
+      <meta name="apple-mobile-web-app-title" content={appName} />
+      <meta name="description" content={description} />
       <meta name="format-detection" content="telephone=no" />
       <meta name="mobile-web-app-capable" content="yes" />
       <meta name="msapplication-TileColor" content="#2B5797" />
@@ -58,26 +65,26 @@ function metadata(basePath) {
       <link rel="icon" type="image/png" sizes="144x144" href={`${basePath}/icons/android-launchericon-144-144.png`} />
       <link rel="icon" type="image/png" sizes="192x192" href={`${basePath}/icons/android-launchericon-192-192.png`} />
       <link rel="icon" type="image/png" sizes="512x512" href={`${basePath}/icons/android-launchericon-512-512.png`} />
-      <link rel="manifest" href={`${basePath}/manifest.json`} />
+      <link rel="manifest" href={`${basePath}/${manifestPath}`} />
       <link
         rel="stylesheet"
         href="https://fonts.googleapis.com/css?family=Roboto:300,400,500"
       />
 
       <meta name="twitter:card" content="summary" />
-      <meta name="twitter:url" content={withSiteUrl('', basePath)} />
-      <meta name="twitter:title" content="PWA App" />
-      <meta name="twitter:description" content="Best PWA App in the world" />
+      <meta name="twitter:url" content={withSiteUrl(path, basePath)} />
+      <meta name="twitter:title" content={appName} />
+      <meta name="twitter:description" content={description} />
       <meta
         name="twitter:image"
         content={withSiteUrl('/icons/apple-touch-icon.png', basePath)}
       />
       <meta name="twitter:creator" content="@DavidWShadow" />
       <meta property="og:type" content="website" />
-      <meta property="og:title" content="PWA App" />
-      <meta property="og:description" content="Best PWA App in the world" />
-      <meta property="og:site_name" content="PWA App" />
-      <meta property="og:url" content={withSiteUrl('', basePath)} />
+      <meta property="og:title" content={appName} />
+      <meta property="og:description" content={description} />
+      <meta property="og:site_name" content={appName} />
+      <meta property="og:url" content={withSiteUrl(path, basePath)} />
       <meta
         property="og:image"
         content={withSiteUrl('/icons/apple-touch-icon.png', basePath)}
@@ -112,7 +119,7 @@ export default function Layout({ children, home }) {
           name="viewport"
           content="minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no, user-scalable=no, viewport-fit=cover"
         />
-        {metadata(basePath)}
+        {pwaMetaTags(basePath)}
       </Head>
       <header className={styles.header}>
         {home ? (
