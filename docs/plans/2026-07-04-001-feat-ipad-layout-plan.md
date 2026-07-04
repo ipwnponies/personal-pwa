@@ -43,16 +43,16 @@ Both apps are standalone installable PWAs styled for phone widths. Random app ha
 **Random app**
 
 - R1. Above the iPad-portrait breakpoint, random app's tab container widens to fill available width up to a stated max-width ceiling (a comfortable reading measure, not full-bleed), replacing the current 320px cap. The ceiling also caps growth on wider/landscape iPads so the container doesn't over-stretch above the breakpoint.
-- R2. Above the breakpoint, interactive controls in random app (roll button, tab targets, weighted-choice row inputs/delete buttons) scale up so none stays sized for a phone-only touch target.
+- R2. Above the breakpoint, interactive controls in random app (roll button, tab targets, dice-roller's min/max bound and count inputs, weighted-choice row's weight input and delete button) scale up so none stays sized for a phone-only touch target; the weighted-choice row's label input widens for readability but is not height-constrained.
 - R3. Random app's existing tabbed navigation (dice roller / weighted choices) stays tabbed and single-column above the breakpoint — no dual-pane restructuring.
 
 **Fitness app**
 
-- R4. Above the breakpoint, fitness app's result-card grid and input fields (weight, repetitions) are reviewed and widened where they still read as phone-cramped, despite the existing 960px cap.
+- R4. Above the breakpoint, fitness app's "Estimated 1RM" stat card and its weight/repetitions input fields are reviewed and widened where they still read as phone-cramped, despite the existing 960px cap. The rep-max/percentage result tables are unchanged.
 
 **Both apps**
 
-- R5. Below the breakpoint, both apps render exactly as they do today, aside from the viewport meta tag added by R7 — the widen is additive above a threshold, not a rewrite of the phone layout. R7's tag must not visibly change phone-width rendering; verify this alongside the iPad checks in Success Criteria.
+- R5. Below the breakpoint, both apps render exactly as they do today, aside from the viewport meta tag added by R7 — the widen is additive above a threshold, not a rewrite of the phone layout. Neither app sets any viewport meta today, so mobile browsers scale a default desktop-width layout down to fit; if R7's tag visibly changes phone rendering, that's accepted as a one-time correction to real device-width scaling, not a regression to block on.
 - R6. Volta app is untouched by this work.
 - R7. Both apps get a `<meta name="viewport" content="width=device-width, initial-scale=1">` tag — neither currently sets one, so the breakpoint cannot key off real device width without it.
 
@@ -68,8 +68,8 @@ Directional only — illustrates the intended user-facing shape, not a spec.
 
 Directional only — illustrates the intended user-facing shape, not a spec.
 
-- **Before:** on an iPad viewport, the result cards and weight/repetitions inputs are sized for phone width — inside the existing 960px cap, the elements read as small and tightly packed relative to the available space.
-- **After:** within the same 960px cap, the result-card grid uses wider columns/gaps and the weight/repetitions input fields grow to a larger touch target — the outer container width is unchanged; only the elements inside it grow.
+- **Before:** on an iPad viewport, the "Estimated 1RM" stat card and the weight/repetitions inputs are sized for phone width — inside the existing 960px cap, they read as small and tightly packed relative to the available space. The rep-max/percentage result tables are unaffected.
+- **After:** within the same 960px cap, the stat card gets more padding/breathing room and the weight/repetitions input fields grow to a larger touch target — the outer container width and the result tables are unchanged; only the stat card and the two inputs grow.
 
 ### Scope Boundaries
 
@@ -93,9 +93,9 @@ Directional only — illustrates the intended user-facing shape, not a spec.
 ### Key Technical Decisions
 
 - **KTD1. Fitness's touched elements move into a new CSS module, not a runtime `matchMedia` hook.** `pages/random/index.module.css` already establishes the CSS-Modules pattern in this repo, and `AGENTS.md` calls for CSS Modules over inline styles in new code. A new `pages/fitness/index.module.css` gets a real `@media` breakpoint with no extra JS. Fitness's other inline styles (unrelated to sizing) are left untouched — this is not a full-file rewrite.
-- **KTD2. Viewport meta tag (R7) is added once, inside the shared `pwaMetaTags()` helper** (`components/layout.jsx`), not duplicated per page. Fitness already calls `pwaMetaTags()` and inherits the tag for free. Random currently renders no `<Head>` at all and needs one added that calls `pwaMetaTags()`. Volta also lacks the tag but is out of scope (R6) and is not touched.
+- **KTD2. Viewport meta tag (R7) is added directly in each page's own `<Head>`, not inside the shared `pwaMetaTags()` helper.** `components/layout.jsx`'s default `Layout` component (used by home/posts/settings/offline pages) already sets its own viewport meta *and* unconditionally calls `pwaMetaTags()` in the same `<Head>` — injecting a viewport tag inside that shared helper would render a second, conflicting viewport meta on every `Layout`-wrapped page, none of which this plan is scoped to touch (only Volta is named as explicitly out of scope). Fitness and random each add the tag as a plain sibling line next to their existing `<Head>` content instead: fitness adds one line beside its existing `pwaMetaTags()` call; random adds a new `<Head>` with just this one static meta tag (no `useRouter()`/`basePath` needed, since the tag's content has nothing to interpolate — this also avoids introducing router-mocking test infra this repo has no precedent for). Volta and other `Layout`-wrapped pages are untouched.
 - **KTD3. Breakpoint = 768px, random's ceiling = 700px, touch-target minimum = 44px — fixed values, not tunable placeholders.** Resolves the Product Contract's "tunable during implementation" language and the deferred Outstanding Question ("shared convention or per-app"): the same three literal numbers are used in both `pages/random/index.module.css` and the new `pages/fitness/index.module.css`. No shared CSS-variable/PostCSS-custom-media indirection — this repo's Next config has no such tooling configured, and duplicating three numbers across two small files is simpler than adding it for two call sites.
-- **KTD4. Inline styles that collide with the breakpoint must move into the CSS module, not stay inline.** Fitness's weight/repetitions inputs and the top stat card currently set `padding`/sizing via the `style` prop. Inline styles win over external stylesheet rules for the same CSS property, so any `@media` rule targeting `padding` or `min-height` on those elements would be silently ignored if the inline `style` prop keeps setting them. U3 moves only the colliding properties (padding, min-height) into CSS module classes; non-conflicting inline styles (color, layout `display`/`gridTemplateColumns`) stay as-is.
+- **KTD4. Fitness's existing inline `padding` on the touched elements moves into the CSS module; `min-height` is new, not moved.** Fitness's weight/repetitions inputs and the "Estimated 1RM" stat card currently set `padding` via the `style` prop, and inline styles win over external stylesheet rules for the same property — so an `@media` rule targeting `padding` on those elements would be silently ignored if the inline `style` prop keeps setting it. U3 moves that existing inline `padding` value into a CSS module base class. `min-height` has no inline equivalent today — it's added fresh inside the `@media` block, nothing to move. Non-conflicting inline styles (color, `display`/`gridTemplateColumns`) stay as-is.
 
 ### Implementation Constraints
 
@@ -115,17 +115,17 @@ Directional only — illustrates the intended user-facing shape, not a spec.
 **Dependencies:** none — lands first; U2 and U3 depend on it since their `@media` rules assume a correct device-width viewport.
 
 **Files:**
-- `components/layout.jsx` — add the viewport `<meta>` inside `pwaMetaTags()`
-- `pages/random/index.jsx` — add a `<Head>` element that calls `pwaMetaTags(basePath, {...})`, mirroring `pages/fitness/index.jsx`'s existing usage
-- `components/layout.test.js` (new) — test file for `pwaMetaTags()`
+- `pages/fitness/index.jsx` — add the viewport `<meta>` as a sibling line inside the existing `<Head>`, next to the existing `pwaMetaTags(...)` call
+- `pages/random/index.jsx` — add a new `<Head>` element containing only the viewport `<meta>` (no `pwaMetaTags()` call — random has no manifest/icon assets today, and adding full PWA meta parity is out of scope for this plan)
 - `pages/random/index.test.jsx` (new) — test file for the page's `<Head>` output
+- `pages/fitness/index.test.jsx` (new) — test file for the page's `<Head>` output
 
-**Approach:** Random currently renders zero PWA meta tags (no manifest link, no icons) — do not add the full `pwaMetaTags()` set of tags/icons as new scope; only confirm the viewport meta renders once `pwaMetaTags()` is called. Reuse random's existing icon/manifest naming pattern (`random-manifest.json`, `random-launchericon`) only if a manifest file for random already exists; if it does not, pass minimal/placeholder values so the call doesn't reference nonexistent assets, and note that as a residual gap rather than expanding scope.
+**Approach:** Add `<meta name="viewport" content="width=device-width, initial-scale=1">` directly in each page, not inside the shared `pwaMetaTags()` helper (see KTD2 — that helper is also called by every `Layout`-wrapped page, which already sets its own viewport meta). Random's tag needs no `basePath` interpolation, so no `useRouter()` call is needed for it — avoids relying on router context in a render test, which this repo has no existing mocking pattern for.
 
 **Test scenarios:**
-- Happy path: rendering `pwaMetaTags()`'s output includes a `meta[name="viewport"]` element with `content="width=device-width, initial-scale=1"`.
-- Happy path: rendering the random page's `<Head>` includes the same viewport meta tag.
-- Regression: fitness page's existing `pwaMetaTags()` call still renders its pre-existing tags (app name, icons) unchanged, in addition to the new viewport tag.
+- Happy path: rendering the random page includes a `meta[name="viewport"]` element with `content="width=device-width, initial-scale=1"`.
+- Happy path: rendering the fitness page includes the same viewport meta tag alongside its existing `pwaMetaTags()` output (app name, icons) unchanged.
+- Regression: no other page (home, posts, settings, `Layout`-wrapped pages) is touched by this unit — confirm `components/layout.jsx` is unmodified.
 
 **Verification:** `npm test` passes for the two new test files; manual check per the doc's Success Criteria that phone-width rendering is visually unchanged after this lands.
 
@@ -144,7 +144,7 @@ Directional only — illustrates the intended user-facing shape, not a spec.
 
 **Approach:** Add one `@media (min-width: 768px)` block at the end of the existing stylesheet (per KTD3's fixed values):
 - `.tabs`: `max-width: 700px` (overrides the existing `max-width: 320px`).
-- `.tab`, `.rollButton`, `.boundInput`, `.settingInput`, `.choiceWeightInput`, `.choiceDelete`: `min-height: 44px` (and `min-width: 44px` for `.choiceDelete`, currently a 32px circle).
+- `.tab`, `.rollButton`, `.boundInput`, `.settingInput`, `.choiceWeightInput`, `.choiceDelete`: `min-height: 44px` (and `min-width: 44px` for `.choiceDelete`, currently a 32px circle; its glyph `font-size` stays at the current `1.2rem` — only the circle grows).
 - No structural changes — `.tabList`, `.container`, `.boundsRow`, `.choicesList` keep their existing `display`/`flex` shape; only sizing changes. This preserves R3 (tabbed, single-column, no dual-pane).
 
 **Test scenarios:**
@@ -155,9 +155,9 @@ Directional only — illustrates the intended user-facing shape, not a spec.
 
 ---
 
-### U3. Fitness app: widen result grid and inputs above the breakpoint
+### U3. Fitness app: widen stat card and inputs above the breakpoint
 
-**Goal:** above 768px, the weight/repetitions inputs and the top stat-card grid widen and reach a 44px touch-target minimum, within the existing 960px page cap (R4).
+**Goal:** above 768px, the weight/repetitions inputs and the "Estimated 1RM" stat card widen and reach a 44px touch-target minimum, within the existing 960px page cap (R4). The rep-max/percentage result tables are not touched.
 
 **Requirements:** R4
 
@@ -165,16 +165,16 @@ Directional only — illustrates the intended user-facing shape, not a spec.
 
 **Files:**
 - `pages/fitness/index.module.css` (new)
-- `pages/fitness/index.jsx` — add `className` to the weight input, repetitions input, and the top "Estimated 1RM" stat-card `<div>`; remove the inline `padding` from those three elements per KTD4 (moved into the module so the `@media` override isn't shadowed by inline styles)
+- `pages/fitness/index.jsx` — add `className` to the weight input, repetitions input, and the "Estimated 1RM" stat-card `<div>`; remove the inline `padding` from those three elements per KTD4 (moved into the module so the `@media` override isn't shadowed by inline styles)
 
 **Approach:** New module with:
-- A base class per touched element carrying today's current padding value (unchanged look below the breakpoint) — this is a straight move of the existing inline `padding` value, not a visual change.
-- One `@media (min-width: 768px)` block: `min-height: 44px` on the weight/repetitions input classes; wider `padding`/`gap` on the stat-card class.
-- Everything else in `pages/fitness/index.jsx` (results-table grid, colors, borders) stays inline and untouched — this unit only touches the three elements named above.
+- A base class per touched element carrying today's current padding value (unchanged look below the breakpoint) — a straight move of the existing inline `padding` value, not a visual change.
+- One `@media (min-width: 768px)` block: `min-height: 44px` on the weight/repetitions input classes; `padding: 1.5rem` and `gap: 1.5rem` on the stat-card class (up from the current `1rem`/implicit spacing).
+- Everything else in `pages/fitness/index.jsx` — the rep-max/percentage result tables, colors, borders — stays inline and untouched. This unit only touches the weight input, repetitions input, and the stat card.
 
 **Test scenarios:**
 - Manual/visual (not automatable in jsdom — see Success Criteria): below 768px, the page renders identically to before this unit; above 768px, the weight/repetitions inputs measure at least 44px tall, and the "Estimated 1RM" stat card has visibly more padding/breathing room, all within the existing 960px `<main>` cap.
-- Regression: the calculation logic (1RM estimate, rep-max table, percentage table) is unaffected — this unit only changes CSS classes/padding, no JS logic.
+- Regression: the calculation logic (1RM estimate, rep-max table, percentage table) is unaffected — this unit only changes CSS classes/padding, no JS logic, and the result tables render exactly as before.
 
 **Verification:** Manual check on a real iPad and at the 768px devtools boundary, per the doc's Success Criteria. `npm test` still passes for `lib/epley.test.js` (unaffected calculation logic).
 
