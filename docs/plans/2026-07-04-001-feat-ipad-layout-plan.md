@@ -169,7 +169,7 @@ Directional only — illustrates the intended user-facing shape, not a spec.
 
 **Approach:** New module with:
 - A base class per touched element carrying today's current padding value (unchanged look below the breakpoint) — a straight move of the existing inline `padding` value, not a visual change.
-- One `@media (min-width: 768px)` block: `min-height: 44px` on the weight/repetitions input classes; `padding: 1.5rem` and `gap: 1.5rem` on the stat-card class (up from the current `1rem`/implicit spacing).
+- One `@media (min-width: 768px)` block: `min-height: 44px` on the weight/repetitions input classes; `padding: 1.5rem` on the stat-card class (up from the current `1rem`). No `gap` is added — the stat card is a single leaf element with no children to space.
 - Everything else in `pages/fitness/index.jsx` — the rep-max/percentage result tables, colors, borders — stays inline and untouched. This unit only touches the weight input, repetitions input, and the stat card.
 
 **Test scenarios:**
