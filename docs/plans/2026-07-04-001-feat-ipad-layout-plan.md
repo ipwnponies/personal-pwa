@@ -30,25 +30,26 @@ Both apps are standalone installable PWAs styled for phone widths. Random app ha
 ### Key Decisions
 
 - **KD1. Wider single column, not side-by-side panels.** Random app's dice-roller and weighted-choices tabs stay tabbed, just wider and bigger above the breakpoint. Rejected showing both panels at once — more restructuring for no clearly wanted benefit.
-- **KD2. Breakpoint (media query), not fluid/clamp scaling.** A fixed breakpoint is simpler and predictable, and matches the responsive pattern fitness app already uses (auto-fit grid). Continuous fluid scaling was considered but adds tuning complexity without a stated need to support arbitrary tablet sizes.
+- **KD2. Breakpoint (media query), not fluid/clamp scaling.** A fixed breakpoint is simpler and predictable. Continuous fluid scaling was considered but adds tuning complexity without a stated need to support arbitrary tablet sizes.
 - **KD3. Fitness app is in scope too.** Even though fitness already has a more generous 960px max-width, it gets the same review pass — max-width and control sizing checked and widened above the breakpoint, not assumed fine by default.
 
 ### Requirements
 
 **Random app**
 
-- R1. Above the iPad-portrait breakpoint, random app's tab container widens from the current 320px cap to a comfortable reading measure, filling available width instead of leaving large empty margins.
-- R2. Above the same breakpoint, interactive controls in random app (roll button, tab targets, weighted-choice row inputs/delete buttons) scale up so none stays sized for a phone-only touch target.
+- R1. Above the iPad-portrait breakpoint, random app's tab container widens to fill available width up to a stated max-width ceiling (a comfortable reading measure, not full-bleed), replacing the current 320px cap. The ceiling also caps growth on wider/landscape iPads so the container doesn't over-stretch above the breakpoint.
+- R2. Above the breakpoint (exact value pending the Outstanding Questions decision below), interactive controls in random app (roll button, tab targets, weighted-choice row inputs/delete buttons) scale up so none stays sized for a phone-only touch target.
 - R3. Random app's existing tabbed navigation (dice roller / weighted choices) stays tabbed and single-column above the breakpoint — no dual-pane restructuring.
 
 **Fitness app**
 
-- R4. Above the same breakpoint, fitness app's max-width and control sizing are reviewed and widened where they still read as phone-cramped, despite the existing 960px cap.
+- R4. Above the breakpoint (exact value pending the Outstanding Questions decision below), fitness app's result-card grid, input fields, and form buttons are reviewed and widened where they still read as phone-cramped, despite the existing 960px cap.
 
 **Both apps**
 
 - R5. Below the breakpoint, both apps render exactly as they do today — this is an additive widen above a threshold, not a rewrite of the phone layout.
 - R6. Volta app is untouched by this work.
+- R7. Both apps get a `<meta name="viewport" content="width=device-width, initial-scale=1">` tag — neither currently sets one, so the breakpoint cannot key off real device width without it.
 
 ### Wireframe: random app, before/after
 
@@ -65,7 +66,7 @@ Directional only — illustrates the intended user-facing shape, not a spec.
 
 ### Success Criteria
 
-- Verified by opening both apps on a real iPad, in portrait and landscape, and confirming neither reads as a cramped, small-touch-target phone layout.
+- Verified by opening both apps on a real iPad, in portrait and landscape: above the breakpoint, containers reach their stated max-width ceiling (not the old 320px/small cap), and interactive controls measure at least ~44px in their touch dimension.
 
 ### Dependencies / Assumptions
 
