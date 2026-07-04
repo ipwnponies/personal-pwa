@@ -310,3 +310,24 @@
   opacity: 0.4;
   pointer-events: none;
 }
+
+/* iPad and wider: replace the phone-width tab container with a comfortable
+   reading measure, and bring touch targets up to a 44px minimum. */
+@media (min-width: 768px) {
+  .tabs {
+    max-width: 700px;
+  }
+
+  .tab,
+  .rollButton,
+  .boundInput,
+  .settingInput,
+  .choiceWeightInput {
+    min-height: 44px;
+  }
+
+  .choiceDelete {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
