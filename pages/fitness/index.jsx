@@ -58,6 +58,7 @@ export default function FitnessCalculator() {
   return (
     <>
       <Head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         {pwaMetaTags(basePath, {
           manifestPath: 'fitness-manifest.json',
           appName: 'Zero-to-Hero App',

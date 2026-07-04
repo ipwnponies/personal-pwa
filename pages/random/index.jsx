@@ -1,3 +1,4 @@
+import Head from 'next/head';
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { TabList, Tabs, Tab, TabPanel } from 'react-tabs';
 
@@ -410,6 +411,9 @@ export default function Random() {
       onTouchMove={pageSwipe.onTouchMove}
       onTouchEnd={pageSwipe.onTouchEnd}
     >
+      <Head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+      </Head>
       <Tabs
         className={styles.tabs}
         selectedIndex={tabIndex}
