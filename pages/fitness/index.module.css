@@ -1,0 +1,20 @@
+.statCard {
+  padding: 1rem;
+}
+
+.numberInput {
+  padding: 0.5rem;
+}
+
+/* iPad and wider: give the stat card more breathing room and bring the
+   weight/repetitions inputs up to a 44px touch-target minimum. The 960px
+   page cap is unchanged -- only these elements grow. */
+@media (min-width: 768px) {
+  .statCard {
+    padding: 1.5rem;
+  }
+
+  .numberInput {
+    min-height: 44px;
+  }
+}

@@ -10,6 +10,7 @@ import {
   buildRepMaxTable,
 } from '../../lib/epley';
 import { pwaMetaTags } from '../../components/layout';
+import styles from './index.module.css';
 
 export default function FitnessCalculator() {
   const { basePath } = useRouter();
@@ -80,10 +81,10 @@ export default function FitnessCalculator() {
           }}
         >
           <div
+            className={styles.statCard}
             style={{
               border: '1px solid #e5e5e5',
               borderRadius: '8px',
-              padding: '1rem',
               background: '#fafafa',
             }}
           >
@@ -112,7 +113,8 @@ export default function FitnessCalculator() {
               min="0"
               value={weight ?? ''}
               onChange={handleNumberInputChange(setWeight)}
-              style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
+              className={styles.numberInput}
+              style={{ border: '1px solid #ccc', borderRadius: '4px' }}
             />
           </label>
 
@@ -124,7 +126,8 @@ export default function FitnessCalculator() {
               max={REPETITION_MAX}
               value={repetitions ?? ''}
               onChange={handleNumberInputChange(setRepetitions)}
-              style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
+              className={styles.numberInput}
+              style={{ border: '1px solid #ccc', borderRadius: '4px' }}
             />
           </label>
 
