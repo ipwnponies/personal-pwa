@@ -31,7 +31,7 @@ Both apps are standalone installable PWAs styled for phone widths. Random app ha
 
 - **KD1. Wider single column, not side-by-side panels.** Random app's dice-roller and weighted-choices tabs stay tabbed, just wider and bigger above the breakpoint. Rejected showing both panels at once — more restructuring for no clearly wanted benefit.
 - **KD2. Breakpoint (media query), not fluid/clamp scaling.** A fixed breakpoint is simpler and predictable. Continuous fluid scaling was considered but adds tuning complexity without a stated need to support arbitrary tablet sizes.
-- **KD3. Fitness app is in scope too.** Even though fitness already has a more generous 960px max-width, it gets the same review pass — max-width and control sizing checked and widened above the breakpoint, not assumed fine by default.
+- **KD3. Fitness app is in scope too.** Even though fitness already has a more generous 960px max-width, it gets the same review pass — its inner elements (grid, inputs, buttons) are checked and widened where cramped, within the existing 960px cap, not assumed fine by default. The 960px cap itself is not being raised.
 
 ### Requirements
 
@@ -47,7 +47,7 @@ Both apps are standalone installable PWAs styled for phone widths. Random app ha
 
 **Both apps**
 
-- R5. Below the breakpoint, both apps render exactly as they do today — this is an additive widen above a threshold, not a rewrite of the phone layout.
+- R5. Below the breakpoint, both apps render exactly as they do today, aside from the viewport meta tag added by R7 — the widen is additive above a threshold, not a rewrite of the phone layout. R7's tag must not visibly change phone-width rendering; verify this alongside the iPad checks in Success Criteria.
 - R6. Volta app is untouched by this work.
 - R7. Both apps get a `<meta name="viewport" content="width=device-width, initial-scale=1">` tag — neither currently sets one, so the breakpoint cannot key off real device width without it.
 
@@ -56,7 +56,15 @@ Both apps are standalone installable PWAs styled for phone widths. Random app ha
 Directional only — illustrates the intended user-facing shape, not a spec.
 
 - **Before:** on an iPad viewport, the tab container stays capped at 320px, rendered as a narrow phone-sized box centered in a much wider background, with empty space on both sides.
-- **After:** above the breakpoint, the same tab container widens to fill a comfortable measure of the available width, and the roll button and row controls inside it scale up to larger touch targets. Tabbed navigation structure is unchanged — only the container width and control sizing grow.
+- **After (dice-roller tab):** the tab container widens to the stated ceiling, and the roll button scales up to a larger touch target within it.
+- **After (weighted-choices tab):** the container widens the same way; each row's label input grows to use the added width, and the weight input and delete button scale up to larger touch targets without the row growing so wide that the delete button sits far from its label.
+
+### Wireframe: fitness app, before/after
+
+Directional only — illustrates the intended user-facing shape, not a spec.
+
+- **Before:** on an iPad viewport, the result cards, repetition/weight inputs, and calculator button are sized for phone width — inside the existing 960px cap, the elements read as small and tightly packed relative to the available space.
+- **After:** within the same 960px cap, the result-card grid uses wider columns/gaps, the repetition/weight input fields grow to a larger touch target, and the calculator button scales up — the outer container width is unchanged; only the elements inside it grow.
 
 ### Scope Boundaries
 
@@ -66,12 +74,14 @@ Directional only — illustrates the intended user-facing shape, not a spec.
 
 ### Success Criteria
 
-- Verified by opening both apps on a real iPad, in portrait and landscape: above the breakpoint, containers reach their stated max-width ceiling (not the old 320px/small cap), and interactive controls measure at least ~44px in their touch dimension.
+- Verified by opening both apps on a real iPad, in portrait and landscape: above the breakpoint, random app's container reaches its ~700px ceiling (not the old 320px cap), fitness app's cramped elements are visibly widened within its existing 960px cap, and interactive controls measure at least ~44px in their touch dimension.
+- Verified on a real phone-width device/viewport that adding the R7 viewport meta tag produces no visible change to either app's current phone layout.
 
 ### Dependencies / Assumptions
 
 - Assumes a standard iPad-portrait-width breakpoint (commonly around 768px) as the trigger; exact value is tunable during implementation against real device testing.
 - Assumes touch targets scale toward a comfortable minimum (commonly cited as ~44px) above the breakpoint.
+- Assumes random app's container max-width ceiling (R1) lands around ~700px (a comfortable reading measure, well short of full iPad width); exact value is tunable during implementation.
 
 ### Outstanding Questions
 
