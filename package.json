@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 8080",
-    "build": "NODE_OPTIONS=\"--require ./scripts/patch-rename.js\" next build --no-lint && node scripts/patch-sw-precache.js",
+    "build": "node scripts/generate-splash.js && NODE_OPTIONS=\"--require ./scripts/patch-rename.js\" next build --no-lint && node scripts/patch-sw-precache.js",
     "start": "next start --port 8080",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -36,6 +36,7 @@
     "eslint-plugin-react": "^7.30.1",
     "eslint-plugin-react-hooks": "^4.6.0",
     "jsdom": "^29.1.1",
+    "pngjs": "^7.0.0",
     "vitest": "^4.1.9"
   }
 }
