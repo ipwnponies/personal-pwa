@@ -29,6 +29,7 @@ export function pwaMetaTags(basePath, options = {}) {
     path = '',
     iconPrefix = 'android-launchericon',
     appleIconPrefix = 'apple-touch-icon',
+    splashFileName = 'splash-root-1536x2048.png',
   } = options;
 
   return (
@@ -68,6 +69,11 @@ export function pwaMetaTags(basePath, options = {}) {
       <link rel="icon" type="image/png" sizes="192x192" href={`${basePath}/icons/${iconPrefix}-192-192.png`} />
       <link rel="icon" type="image/png" sizes="512x512" href={`${basePath}/icons/${iconPrefix}-512-512.png`} />
       <link rel="manifest" href={`${basePath}/${manifestPath}`} />
+      <link
+        rel="apple-touch-startup-image"
+        href={`${basePath}/icons/${splashFileName}`}
+        media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+      />
       <link
         rel="stylesheet"
         href="https://fonts.googleapis.com/css?family=Roboto:300,400,500"

@@ -10,6 +10,7 @@ import {
   buildRepMaxTable,
 } from '../../lib/epley';
 import { pwaMetaTags } from '../../components/layout';
+import styles from './index.module.css';
 
 export default function FitnessCalculator() {
   const { basePath } = useRouter();
@@ -65,57 +66,33 @@ export default function FitnessCalculator() {
           path: '/fitness',
           iconPrefix: 'fitness-launchericon',
           appleIconPrefix: 'fitness-apple-touch-icon',
+          splashFileName: 'splash-fitness-1536x2048.png',
         })}
       </Head>
-      <main style={{ maxWidth: '960px', margin: '0 auto', padding: '2rem 1rem' }}>
-        <h1 style={{ marginBottom: '0.5rem' }}>Rep-Max Calculator</h1>
+      <main className={styles.main}>
+        <h1 className={styles.heading}>Rep-Max Calculator</h1>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-            gap: '1rem',
-            marginBottom: '1.5rem',
-          }}
-        >
-          <div
-            style={{
-              border: '1px solid #e5e5e5',
-              borderRadius: '8px',
-              padding: '1rem',
-              background: '#fafafa',
-            }}
-          >
-            <p style={{ margin: 0, color: '#555' }}>Estimated 1RM</p>
-            <p style={{ fontSize: '1.8rem', fontWeight: 700, margin: '0.25rem 0 0' }}>
-              {estimatedOneRmDisplay} units
-            </p>
-            <p style={{ margin: '0.35rem 0 0', color: '#777', fontSize: '0.9rem' }}>
-              Based on {repetitionDisplay}
-            </p>
+        <div className={styles.summaryGrid}>
+          <div className={styles.summaryCard}>
+            <p className={styles.summaryLabel}>Estimated 1RM</p>
+            <p className={styles.summaryValue}>{estimatedOneRmDisplay} units</p>
+            <p className={styles.summarySubtext}>Based on {repetitionDisplay}</p>
           </div>
         </div>
 
-        <form
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-            gap: '1rem',
-            marginBottom: '1.5rem',
-          }}
-        >
-          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        <form className={styles.form}>
+          <label className={styles.field}>
             <span>Weight used</span>
             <input
               type="number"
               min="0"
               value={weight ?? ''}
               onChange={handleNumberInputChange(setWeight)}
-              style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
+              className={styles.input}
             />
           </label>
 
-          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <label className={styles.field}>
             <span>Repetitions ({REPETITION_MIN}-{REPETITION_MAX})</span>
             <input
               type="number"
@@ -123,101 +100,63 @@ export default function FitnessCalculator() {
               max={REPETITION_MAX}
               value={repetitions ?? ''}
               onChange={handleNumberInputChange(setRepetitions)}
-              style={{ padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
+              className={styles.input}
             />
           </label>
 
         </form>
 
         {calculation.error ? (
-          <p style={{ color: '#b00020' }}>{calculation.error}</p>
+          <p className={styles.errorText}>{calculation.error}</p>
         ) : (
           <section>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-                gap: '1rem',
-              }}
-            >
-              <div
-                style={{
-                  overflowX: 'auto',
-                  maxHeight: '360px',
-                  overflowY: 'auto',
-                  border: '1px solid #eee',
-                  borderRadius: '8px',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                }}
-              >
-                <div style={{ padding: '0.75rem', borderBottom: '1px solid #f2f2f2' }}>
-                  <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Projected Rep Maxes</h2>
-                  <p style={{ margin: '0.25rem 0 0', color: '#666', fontSize: '0.9rem' }}>
+            <div className={styles.resultsGrid}>
+              <div className={styles.tableCard}>
+                <div className={styles.tableHeader}>
+                  <h2 className={styles.tableTitle}>Projected Rep Maxes</h2>
+                  <p className={styles.tableSubtitle}>
                     Reps taken to failure using the estimated 1RM.
                   </p>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <table className={styles.table}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: 'left', borderBottom: '2px solid #ddd', padding: '0.5rem' }}>
-                        Reps to Failure
-                      </th>
-                      <th style={{ textAlign: 'left', borderBottom: '2px solid #ddd', padding: '0.5rem' }}>
-                        Estimated Weight
-                      </th>
+                      <th className={styles.th}>Reps to Failure</th>
+                      <th className={styles.th}>Estimated Weight</th>
                     </tr>
                   </thead>
                   <tbody>
                     {calculation.repMaxes.map((entry) => (
                       <tr key={entry.repCount}>
-                        <td style={{ borderBottom: '1px solid #eee', padding: '0.5rem' }}>
+                        <td className={styles.td}>
                           {entry.repCount} rep{entry.repCount > 1 ? 's' : ''}
                         </td>
-                        <td style={{ borderBottom: '1px solid #eee', padding: '0.5rem' }}>
-                          {formatWeight(entry.weight)}
-                        </td>
+                        <td className={styles.td}>{formatWeight(entry.weight)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
 
-              <div
-                style={{
-                  overflowX: 'auto',
-                  maxHeight: '360px',
-                  overflowY: 'auto',
-                  border: '1px solid #eee',
-                  borderRadius: '8px',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                }}
-              >
-                <div style={{ padding: '0.75rem', borderBottom: '1px solid #f2f2f2' }}>
-                  <h2 style={{ margin: 0, fontSize: '1.1rem' }}>1RM Percentage Guide</h2>
-                  <p style={{ margin: '0.25rem 0 0', color: '#666', fontSize: '0.9rem' }}>
+              <div className={styles.tableCard}>
+                <div className={styles.tableHeader}>
+                  <h2 className={styles.tableTitle}>1RM Percentage Guide</h2>
+                  <p className={styles.tableSubtitle}>
                     Quick reference for popular training percentages.
                   </p>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <table className={styles.table}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: 'left', borderBottom: '2px solid #ddd', padding: '0.5rem' }}>
-                        % of 1RM
-                      </th>
-                      <th style={{ textAlign: 'left', borderBottom: '2px solid #ddd', padding: '0.5rem' }}>
-                        Estimated Weight
-                      </th>
+                      <th className={styles.th}>% of 1RM</th>
+                      <th className={styles.th}>Estimated Weight</th>
                     </tr>
                   </thead>
                   <tbody>
                     {calculation.percentageBreakdown.map((entry) => (
                       <tr key={entry.percentage}>
-                        <td style={{ borderBottom: '1px solid #eee', padding: '0.5rem' }}>
-                          {entry.percentage}%
-                        </td>
-                        <td style={{ borderBottom: '1px solid #eee', padding: '0.5rem' }}>
-                          {formatWeight(entry.weight)}
-                        </td>
+                        <td className={styles.td}>{entry.percentage}%</td>
+                        <td className={styles.td}>{formatWeight(entry.weight)}</td>
                       </tr>
                     ))}
                   </tbody>
