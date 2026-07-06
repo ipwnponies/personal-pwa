@@ -41,6 +41,7 @@ styles/          Global CSS and CSS Module utilities
 ## Testing Conventions
 
 - Test files go **next to the source file** they test: `lib/posts.test.js` for `lib/posts.js`
+- **Exception: never co-locate test files under `pages/`.** Next.js's pages-router treats every file under `pages/` as a route candidate, including `.test.js`/`.test.jsx` files — the production build (`next build`) crashes trying to statically generate a page for them. Tests for files under `pages/` go in `__tests__/pages/`, mirroring the path (e.g. `pages/fitness/index.jsx` → `__tests__/pages/fitness/index.test.jsx`).
 - File pattern: `**/*.test.{js,jsx}`
 - React component tests use `@testing-library/react`
 - jest-dom matchers available (`toBeInTheDocument()`, etc.)
