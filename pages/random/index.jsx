@@ -1,9 +1,12 @@
+import Head from 'next/head';
+import { useRouter } from 'next/router';
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { TabList, Tabs, Tab, TabPanel } from 'react-tabs';
 
 import 'react-tabs/style/react-tabs.css';
 import styles from './index.module.css';
 import { clamp, weightedRandomChoice, generateId } from '../../lib/random';
+import { pwaMetaTags } from '../../components/layout';
 
 const SWIPE_THRESHOLD = 10;
 const HORIZONTAL_SWIPE_THRESHOLD = 50;
@@ -392,6 +395,7 @@ function WeightedChoices() {
 const TAB_COUNT = 2;
 
 export default function Random() {
+  const { basePath } = useRouter();
   const [tabIndex, setTabIndex] = useState(0);
 
   const swipeLeft = useCallback(() => {
@@ -410,6 +414,7 @@ export default function Random() {
       onTouchMove={pageSwipe.onTouchMove}
       onTouchEnd={pageSwipe.onTouchEnd}
     >
+      <Head>{pwaMetaTags(basePath)}</Head>
       <Tabs
         className={styles.tabs}
         selectedIndex={tabIndex}
