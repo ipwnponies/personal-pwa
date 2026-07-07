@@ -3,12 +3,12 @@ import { useRouter } from 'next/router';
 import React, { useMemo, useState } from 'react';
 import {
   REPETITION_MIN,
-  REPETITION_MAX,
   calculateOneRmEpley,
   formatWeight,
   buildPercentageTable,
   buildRepMaxTable,
 } from '../../lib/epley';
+import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import { pwaMetaTags } from '../../components/layout';
 import styles from './index.module.css';
 
@@ -17,25 +17,10 @@ export default function FitnessCalculator() {
   const [repetitions, setRepetitions] = useState(5);
   const [weight, setWeight] = useState(100);
 
-  const handleNumberInputChange = (setter) => (event) => {
-    const { value } = event.target;
-    if (value === '') {
-      setter(null);
-      return;
-    }
-
-    setter(Number(value));
-  };
+  const weightField = useSwipeNumber(weight, setWeight, 0, Infinity);
+  const repsField = useSwipeNumber(repetitions, setRepetitions, REPETITION_MIN, Infinity);
 
   const calculation = useMemo(() => {
-    if (
-      !Number.isFinite(repetitions) ||
-      repetitions < REPETITION_MIN ||
-      repetitions > REPETITION_MAX
-    ) {
-      return { error: `Enter repetitions between ${REPETITION_MIN} and ${REPETITION_MAX}.` };
-    }
-
     if (!Number.isFinite(weight) || weight <= 0) {
       return { error: 'Enter a working weight greater than 0.' };
     }
@@ -52,9 +37,7 @@ export default function FitnessCalculator() {
   }, [repetitions, weight]);
 
   const estimatedOneRmDisplay = calculation.error ? '--' : formatWeight(calculation.estimatedOneRm);
-  const repetitionDisplay = Number.isFinite(repetitions)
-    ? `${repetitions} rep${repetitions === 1 ? '' : 's'}`
-    : '--';
+  const repetitionDisplay = `${repetitions} rep${repetitions === 1 ? '' : 's'}`;
 
   return (
     <>
@@ -85,21 +68,33 @@ export default function FitnessCalculator() {
             <span>Weight used</span>
             <input
               type="number"
+              inputMode="numeric"
+              pattern="[0-9]*"
               min="0"
-              value={weight ?? ''}
-              onChange={handleNumberInputChange(setWeight)}
+              value={weightField.inputValue}
+              placeholder={weightField.placeholder}
+              onChange={weightField.onChange}
+              onFocus={weightField.onFocus}
+              onBlur={weightField.onBlur}
               className={styles.input}
             />
           </label>
 
           <label className={styles.field}>
-            <span>Repetitions ({REPETITION_MIN}-{REPETITION_MAX})</span>
+            <span>Repetitions</span>
             <input
               type="number"
+              inputMode="numeric"
+              pattern="[0-9]*"
               min={REPETITION_MIN}
-              max={REPETITION_MAX}
-              value={repetitions ?? ''}
-              onChange={handleNumberInputChange(setRepetitions)}
+              value={repsField.inputValue}
+              placeholder={repsField.placeholder}
+              onChange={repsField.onChange}
+              onFocus={repsField.onFocus}
+              onBlur={repsField.onBlur}
+              onTouchStart={repsField.onTouchStart}
+              onTouchMove={repsField.onTouchMove}
+              onTouchEnd={repsField.onTouchEnd}
               className={styles.input}
             />
           </label>
