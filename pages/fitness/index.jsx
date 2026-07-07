@@ -1,6 +1,6 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   REPETITION_MIN,
   calculateOneRmEpley,
@@ -26,25 +26,28 @@ function loadStoredInputs() {
 
 export default function FitnessCalculator() {
   const { basePath } = useRouter();
-  const [weight, setWeight] = useState(() => {
-    const stored = loadStoredInputs();
-    return stored && Number.isFinite(stored.weight) && stored.weight > 0 ? stored.weight : 100;
-  });
-  const [repetitions, setRepetitions] = useState(() => {
-    const stored = loadStoredInputs();
-    return stored && Number.isFinite(stored.repetitions) && stored.repetitions >= REPETITION_MIN
-      ? stored.repetitions
-      : 5;
-  });
+  const [weight, setWeight] = useState(100);
+  const [repetitions, setRepetitions] = useState(5);
+  const [hydrated, setHydrated] = useState(false);
 
-  const mountedRef = useRef(false);
+  // Read must happen in an effect, not a lazy useState initializer: the server has no
+  // localStorage, so a synchronous read would make the client's first render diverge
+  // from the server-rendered HTML and trigger a hydration mismatch.
   useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
+    const stored = loadStoredInputs();
+    if (stored) {
+      if (Number.isFinite(stored.weight) && stored.weight > 0) setWeight(stored.weight);
+      if (Number.isFinite(stored.repetitions) && stored.repetitions >= REPETITION_MIN) {
+        setRepetitions(stored.repetitions);
+      }
     }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ weight, repetitions }));
-  }, [weight, repetitions]);
+  }, [weight, repetitions, hydrated]);
 
   const weightField = useSwipeNumber(weight, setWeight, 0, Infinity);
   const repsField = useSwipeNumber(repetitions, setRepetitions, REPETITION_MIN, Infinity);
