@@ -1,6 +1,6 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   REPETITION_MIN,
   calculateOneRmEpley,
@@ -12,10 +12,39 @@ import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import { pwaMetaTags } from '../../components/layout';
 import styles from './index.module.css';
 
+const STORAGE_KEY = 'fitness-inputs';
+
+function loadStoredInputs() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function FitnessCalculator() {
   const { basePath } = useRouter();
-  const [repetitions, setRepetitions] = useState(5);
-  const [weight, setWeight] = useState(100);
+  const [weight, setWeight] = useState(() => {
+    const stored = loadStoredInputs();
+    return stored && Number.isFinite(stored.weight) && stored.weight > 0 ? stored.weight : 100;
+  });
+  const [repetitions, setRepetitions] = useState(() => {
+    const stored = loadStoredInputs();
+    return stored && Number.isFinite(stored.repetitions) && stored.repetitions >= REPETITION_MIN
+      ? stored.repetitions
+      : 5;
+  });
+
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ weight, repetitions }));
+  }, [weight, repetitions]);
 
   const weightField = useSwipeNumber(weight, setWeight, 0, Infinity);
   const repsField = useSwipeNumber(repetitions, setRepetitions, REPETITION_MIN, Infinity);

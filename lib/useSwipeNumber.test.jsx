@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { useSwipeNumber } from './useSwipeNumber';
 
+// eslint-disable-next-line react/prop-types
 function Harness({ min = 1, max = 30, initial = 5 }) {
   const [value, setValue] = useState(initial);
   const field = useSwipeNumber(value, setValue, min, max);

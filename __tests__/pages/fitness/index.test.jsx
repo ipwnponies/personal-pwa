@@ -72,4 +72,31 @@ describe('FitnessCalculator', () => {
     fireEvent.touchEnd(weightInput, { changedTouches: [{ clientY: 150 }] });
     expect(screen.getByText('113 units')).toBeInTheDocument();
   });
+
+  it('persists weight and reps to localStorage and restores them on remount', () => {
+    const { unmount } = render(<FitnessCalculator />);
+    const [weightInput, repsInput] = screen.getAllByRole('spinbutton');
+
+    fireEvent.focus(weightInput);
+    fireEvent.change(weightInput, { target: { value: '150' } });
+    fireEvent.blur(weightInput);
+
+    fireEvent.focus(repsInput);
+    fireEvent.change(repsInput, { target: { value: '8' } });
+    fireEvent.blur(repsInput);
+
+    unmount();
+    render(<FitnessCalculator />);
+
+    const [restoredWeightInput] = screen.getAllByRole('spinbutton');
+    expect(restoredWeightInput.value).toBe('150');
+    expect(screen.getByText('Based on 8 reps')).toBeInTheDocument();
+  });
+
+  it('falls back to defaults when localStorage has no saved inputs', () => {
+    render(<FitnessCalculator />);
+    expect(screen.getByText('Based on 5 reps')).toBeInTheDocument();
+    const [weightInput] = screen.getAllByRole('spinbutton');
+    expect(weightInput.value).toBe('100');
+  });
 });
