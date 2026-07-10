@@ -1,41 +1,58 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   REPETITION_MIN,
-  REPETITION_MAX,
   calculateOneRmEpley,
   formatWeight,
   buildPercentageTable,
   buildRepMaxTable,
 } from '../../lib/epley';
+import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import { pwaMetaTags } from '../../components/layout';
 import styles from './index.module.css';
 
+const STORAGE_KEY = 'fitness-inputs';
+
+function loadStoredInputs() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function FitnessCalculator() {
   const { basePath } = useRouter();
-  const [repetitions, setRepetitions] = useState(5);
   const [weight, setWeight] = useState(100);
+  const [repetitions, setRepetitions] = useState(5);
+  const [hydrated, setHydrated] = useState(false);
 
-  const handleNumberInputChange = (setter) => (event) => {
-    const { value } = event.target;
-    if (value === '') {
-      setter(null);
-      return;
+  // Read must happen in an effect, not a lazy useState initializer: the server has no
+  // localStorage, so a synchronous read would make the client's first render diverge
+  // from the server-rendered HTML and trigger a hydration mismatch.
+  useEffect(() => {
+    const stored = loadStoredInputs();
+    if (stored) {
+      if (Number.isFinite(stored.weight) && stored.weight > 0) setWeight(stored.weight);
+      if (Number.isFinite(stored.repetitions) && stored.repetitions >= REPETITION_MIN) {
+        setRepetitions(stored.repetitions);
+      }
     }
+    setHydrated(true);
+  }, []);
 
-    setter(Number(value));
-  };
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ weight, repetitions }));
+  }, [weight, repetitions, hydrated]);
+
+  const weightField = useSwipeNumber(weight, setWeight, 0, Infinity);
+  const repsField = useSwipeNumber(repetitions, setRepetitions, REPETITION_MIN, Infinity);
 
   const calculation = useMemo(() => {
-    if (
-      !Number.isFinite(repetitions) ||
-      repetitions < REPETITION_MIN ||
-      repetitions > REPETITION_MAX
-    ) {
-      return { error: `Enter repetitions between ${REPETITION_MIN} and ${REPETITION_MAX}.` };
-    }
-
     if (!Number.isFinite(weight) || weight <= 0) {
       return { error: 'Enter a working weight greater than 0.' };
     }
@@ -52,9 +69,7 @@ export default function FitnessCalculator() {
   }, [repetitions, weight]);
 
   const estimatedOneRmDisplay = calculation.error ? '--' : formatWeight(calculation.estimatedOneRm);
-  const repetitionDisplay = Number.isFinite(repetitions)
-    ? `${repetitions} rep${repetitions === 1 ? '' : 's'}`
-    : '--';
+  const repetitionDisplay = `${repetitions} rep${repetitions === 1 ? '' : 's'}`;
 
   return (
     <>
@@ -85,21 +100,33 @@ export default function FitnessCalculator() {
             <span>Weight used</span>
             <input
               type="number"
+              inputMode="numeric"
+              pattern="[0-9]*"
               min="0"
-              value={weight ?? ''}
-              onChange={handleNumberInputChange(setWeight)}
+              value={weightField.inputValue}
+              placeholder={weightField.placeholder}
+              onChange={weightField.onChange}
+              onFocus={weightField.onFocus}
+              onBlur={weightField.onBlur}
               className={styles.input}
             />
           </label>
 
           <label className={styles.field}>
-            <span>Repetitions ({REPETITION_MIN}-{REPETITION_MAX})</span>
+            <span>Repetitions</span>
             <input
               type="number"
+              inputMode="numeric"
+              pattern="[0-9]*"
               min={REPETITION_MIN}
-              max={REPETITION_MAX}
-              value={repetitions ?? ''}
-              onChange={handleNumberInputChange(setRepetitions)}
+              value={repsField.inputValue}
+              placeholder={repsField.placeholder}
+              onChange={repsField.onChange}
+              onFocus={repsField.onFocus}
+              onBlur={repsField.onBlur}
+              onTouchStart={repsField.onTouchStart}
+              onTouchMove={repsField.onTouchMove}
+              onTouchEnd={repsField.onTouchEnd}
               className={styles.input}
             />
           </label>
