@@ -1,9 +1,12 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import React, { useEffect, useMemo, useState } from 'react';
+import PropTypes from 'prop-types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   REPETITION_MIN,
   calculateOneRmEpley,
+  calculatePercentageOfOneRm,
+  roundToNearestFivePercent,
   formatWeight,
   buildPercentageTable,
   buildRepMaxTable,
@@ -23,6 +26,63 @@ function loadStoredInputs() {
     return null;
   }
 }
+
+function ResultTable({ title, subtitle, columnLabels, rows, rowKey, rowLabel, rowValue, highlightedKey }) {
+  const highlightedRowRef = useRef(null);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      highlightedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    return () => clearTimeout(timeout);
+  }, [highlightedKey]);
+
+  return (
+    <div className={styles.tableCard}>
+      <div className={styles.tableHeader}>
+        <h2 className={styles.tableTitle}>{title}</h2>
+        <p className={styles.tableSubtitle}>{subtitle}</p>
+      </div>
+      <div className={styles.tableScroll}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th className={styles.th}>{columnLabels[0]}</th>
+              <th className={styles.th}>{columnLabels[1]}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const key = rowKey(row);
+              const isHighlighted = key === highlightedKey;
+              return (
+                <tr
+                  key={key}
+                  ref={isHighlighted ? highlightedRowRef : undefined}
+                  className={isHighlighted ? styles.rowHighlighted : undefined}
+                >
+                  <td className={styles.td}>{rowLabel(row)}</td>
+                  <td className={styles.td}>{rowValue(row)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+ResultTable.propTypes = {
+  title: PropTypes.string.isRequired,
+  subtitle: PropTypes.string.isRequired,
+  columnLabels: PropTypes.arrayOf(PropTypes.string).isRequired,
+  rows: PropTypes.arrayOf(PropTypes.object).isRequired,
+  rowKey: PropTypes.func.isRequired,
+  rowLabel: PropTypes.func.isRequired,
+  rowValue: PropTypes.func.isRequired,
+  highlightedKey: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+};
 
 export default function FitnessCalculator() {
   const { basePath } = useRouter();
@@ -70,6 +130,9 @@ export default function FitnessCalculator() {
 
   const estimatedOneRmDisplay = calculation.error ? '--' : formatWeight(calculation.estimatedOneRm);
   const repetitionDisplay = `${repetitions} rep${repetitions === 1 ? '' : 's'}`;
+  const highlightedPercent = calculation.error
+    ? null
+    : roundToNearestFivePercent(calculatePercentageOfOneRm(repetitions));
 
   return (
     <>
@@ -138,57 +201,27 @@ export default function FitnessCalculator() {
         ) : (
           <section>
             <div className={styles.resultsGrid}>
-              <div className={styles.tableCard}>
-                <div className={styles.tableHeader}>
-                  <h2 className={styles.tableTitle}>Projected Rep Maxes</h2>
-                  <p className={styles.tableSubtitle}>
-                    Reps taken to failure using the estimated 1RM.
-                  </p>
-                </div>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th className={styles.th}>Reps to Failure</th>
-                      <th className={styles.th}>Estimated Weight</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {calculation.repMaxes.map((entry) => (
-                      <tr key={entry.repCount}>
-                        <td className={styles.td}>
-                          {entry.repCount} rep{entry.repCount > 1 ? 's' : ''}
-                        </td>
-                        <td className={styles.td}>{formatWeight(entry.weight)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ResultTable
+                title="Projected Rep Maxes"
+                subtitle="Reps taken to failure using the estimated 1RM."
+                columnLabels={['Reps to Failure', 'Estimated Weight']}
+                rows={calculation.repMaxes}
+                rowKey={(entry) => entry.repCount}
+                rowLabel={(entry) => `${entry.repCount} rep${entry.repCount > 1 ? 's' : ''}`}
+                rowValue={(entry) => formatWeight(entry.weight)}
+                highlightedKey={Math.round(repetitions)}
+              />
 
-              <div className={styles.tableCard}>
-                <div className={styles.tableHeader}>
-                  <h2 className={styles.tableTitle}>1RM Percentage Guide</h2>
-                  <p className={styles.tableSubtitle}>
-                    Quick reference for popular training percentages.
-                  </p>
-                </div>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th className={styles.th}>% of 1RM</th>
-                      <th className={styles.th}>Estimated Weight</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {calculation.percentageBreakdown.map((entry) => (
-                      <tr key={entry.percentage}>
-                        <td className={styles.td}>{entry.percentage}%</td>
-                        <td className={styles.td}>{formatWeight(entry.weight)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ResultTable
+                title="1RM Percentage Guide"
+                subtitle="Quick reference for popular training percentages."
+                columnLabels={['% of 1RM', 'Estimated Weight']}
+                rows={calculation.percentageBreakdown}
+                rowKey={(entry) => entry.percentage}
+                rowLabel={(entry) => `${entry.percentage}%`}
+                rowValue={(entry) => formatWeight(entry.weight)}
+                highlightedKey={highlightedPercent}
+              />
             </div>
           </section>
         )}

@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import FitnessCalculator from '../../../pages/fitness/index';
 
 vi.mock('next/router', () => ({
@@ -12,6 +12,15 @@ beforeEach(() => {
 });
 
 describe('FitnessCalculator', () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders the default 1RM estimate for the initial weight and reps', () => {
     render(<FitnessCalculator />);
     expect(screen.getByRole('heading', { name: 'Rep-Max Calculator' })).toBeInTheDocument();
@@ -98,5 +107,145 @@ describe('FitnessCalculator', () => {
     expect(screen.getByText('Based on 5 reps')).toBeInTheDocument();
     const [weightInput] = screen.getAllByRole('spinbutton');
     expect(weightInput.value).toBe('100');
+  });
+
+  it('highlights the Projected Rep Maxes row matching the current reps input', () => {
+    render(<FitnessCalculator />);
+    const matchedRow = screen.getByText('5 reps').closest('tr');
+    const otherRow = screen.getByText('6 reps').closest('tr');
+    expect(matchedRow.className).toMatch(/rowHighlighted/);
+    expect(otherRow.className).not.toMatch(/rowHighlighted/);
+  });
+
+  it('highlights the 1RM Percentage Guide row matching the current reps input', () => {
+    render(<FitnessCalculator />);
+    // default reps=5: ratio=1+4/30=1.1333, %1RM=100/1.1333≈88.235 -> rounds to 90%
+    const matchedRow = screen.getByText('90%').closest('tr');
+    const otherRow = screen.getByText('85%').closest('tr');
+    expect(matchedRow.className).toMatch(/rowHighlighted/);
+    expect(otherRow.className).not.toMatch(/rowHighlighted/);
+  });
+
+  it('moves the highlight when the reps input changes', () => {
+    render(<FitnessCalculator />);
+    const [, repsInput] = screen.getAllByRole('spinbutton');
+    fireEvent.focus(repsInput);
+    fireEvent.change(repsInput, { target: { value: '10' } });
+    fireEvent.blur(repsInput);
+    const newMatchedRow = screen.getByText('10 reps').closest('tr');
+    const oldMatchedRow = screen.getByText('5 reps').closest('tr');
+    expect(newMatchedRow.className).toMatch(/rowHighlighted/);
+    expect(oldMatchedRow.className).not.toMatch(/rowHighlighted/);
+  });
+
+  it('moves the percentage-guide highlight when the reps input changes', () => {
+    render(<FitnessCalculator />);
+    const [, repsInput] = screen.getAllByRole('spinbutton');
+    // 10 reps: ratio=1+9/30=1.3, %1RM=100/1.3≈76.923 -> rounds to 75%
+    fireEvent.focus(repsInput);
+    fireEvent.change(repsInput, { target: { value: '10' } });
+    fireEvent.blur(repsInput);
+    const newMatchedRow = screen.getByText('75%').closest('tr');
+    const oldMatchedRow = screen.getByText('90%').closest('tr');
+    expect(newMatchedRow.className).toMatch(/rowHighlighted/);
+    expect(oldMatchedRow.className).not.toMatch(/rowHighlighted/);
+  });
+
+  it('highlights the nearest whole-rep row when the reps input is a decimal', () => {
+    render(<FitnessCalculator />);
+    const [, repsInput] = screen.getAllByRole('spinbutton');
+    fireEvent.focus(repsInput);
+    fireEvent.change(repsInput, { target: { value: '12.4' } });
+    fireEvent.blur(repsInput);
+    const matchedRow = screen.getByText('12 reps').closest('tr');
+    expect(matchedRow.className).toMatch(/rowHighlighted/);
+  });
+
+  it('scrolls the highlighted row into view on mount', () => {
+    render(<FitnessCalculator />);
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  });
+
+  it('scrolls the percentage-guide highlighted row into view on mount', () => {
+    render(<FitnessCalculator />);
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    // both tables' highlighted rows receive a scrollIntoView call on mount
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(2);
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  });
+
+  it('debounces the scroll when reps changes rapidly, scrolling only once after it settles', () => {
+    render(<FitnessCalculator />);
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    Element.prototype.scrollIntoView.mockClear();
+
+    const [, repsInput] = screen.getAllByRole('spinbutton');
+
+    fireEvent.focus(repsInput);
+    fireEvent.change(repsInput, { target: { value: '7' } });
+    fireEvent.blur(repsInput);
+    act(() => {
+      vi.advanceTimersByTime(80);
+    });
+
+    fireEvent.focus(repsInput);
+    fireEvent.change(repsInput, { target: { value: '10' } });
+    fireEvent.blur(repsInput);
+    act(() => {
+      vi.advanceTimersByTime(80);
+    });
+
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    // both tables' highlighted rows receive a scrollIntoView call once settled
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-scrolls to the highlighted row after recovering from a weight-only validation error', () => {
+    render(<FitnessCalculator />);
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+    Element.prototype.scrollIntoView.mockClear();
+
+    const [weightInput] = screen.getAllByRole('spinbutton');
+    fireEvent.focus(weightInput);
+    fireEvent.change(weightInput, { target: { value: '0' } });
+    fireEvent.blur(weightInput);
+    expect(screen.getByText('Enter a working weight greater than 0.')).toBeInTheDocument();
+
+    fireEvent.focus(weightInput);
+    fireEvent.change(weightInput, { target: { value: '120' } });
+    fireEvent.blur(weightInput);
+    act(() => {
+      vi.advanceTimersByTime(150);
+    });
+
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  });
+
+  it('does not highlight any row in the 1RM Percentage Guide table for an unrelated percentage', () => {
+    render(<FitnessCalculator />);
+    const percentageRow = screen.getByText('100%').closest('tr');
+    expect(percentageRow.className).not.toMatch(/rowHighlighted/);
   });
 });
