@@ -73,13 +73,14 @@ describe('FitnessCalculator', () => {
     expect(screen.getByText('Based on 7 reps')).toBeInTheDocument();
   });
 
-  it('does not enable touch swipe on the weight input', () => {
+  it('adjusts weight via touch swipe in 5-unit steps', () => {
     render(<FitnessCalculator />);
     const [weightInput] = screen.getAllByRole('spinbutton');
+    // deltaY of 60 past the threshold crosses 3 steps at PIXELS_PER_STEP=20, scaled by step=5 -> +15
     fireEvent.touchStart(weightInput, { touches: [{ clientY: 200 }] });
-    fireEvent.touchMove(weightInput, { touches: [{ clientY: 150 }] });
-    fireEvent.touchEnd(weightInput, { changedTouches: [{ clientY: 150 }] });
-    expect(screen.getByText('113 units')).toBeInTheDocument();
+    fireEvent.touchMove(weightInput, { touches: [{ clientY: 140 }] });
+    fireEvent.touchEnd(weightInput, { changedTouches: [{ clientY: 140 }] });
+    expect(weightInput.value).toBe('115');
   });
 
   it('persists weight and reps to localStorage and restores them on remount', () => {

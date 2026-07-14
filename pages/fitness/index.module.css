@@ -53,9 +53,61 @@
 }
 
 .input {
-  padding: 0.5rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
   border: 1px solid #ccc;
   border-radius: 4px;
+  min-height: 64px;
+  font-size: 1.75rem;
+  box-sizing: border-box;
+}
+
+.swipeInputWrap {
+  position: relative;
+}
+
+.swipeInputWrap .input {
+  padding-right: 2.5rem;
+  touch-action: none;
+  -moz-appearance: textfield;
+}
+
+.swipeInputWrap .input::-webkit-outer-spin-button,
+.swipeInputWrap .input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.swipeChevrons {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  opacity: 0.4;
+  font-size: 0.9rem;
+  line-height: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.swipeHint {
+  animation: swipeNudge 1.2s ease-in-out 1;
+}
+
+@keyframes swipeNudge {
+  0%,
+  100% {
+    transform: translateY(-50%);
+  }
+  25% {
+    transform: translateY(-58%);
+  }
+  75% {
+    transform: translateY(-42%);
+  }
 }
 
 .errorText {
@@ -125,11 +177,6 @@
 
 /* Tablet portrait and up (iPad and similar) */
 @media (min-width: 768px) {
-  .input {
-    min-height: 44px;
-    font-size: 1.05rem;
-  }
-
   .th,
   .td {
     padding: 0.75rem;

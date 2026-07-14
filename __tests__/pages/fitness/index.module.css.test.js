@@ -16,10 +16,13 @@ describe('fitness page tablet breakpoints', () => {
     expect(css).toContain('@media (min-width: 1024px) and (orientation: landscape)');
   });
 
-  it('gives inputs a 44px minimum touch target within the tablet-portrait breakpoint', () => {
-    const breakpointIndex = css.indexOf('@media (min-width: 768px)');
-    const targetIndex = css.indexOf('min-height: 44px', breakpointIndex);
-    expect(targetIndex).toBeGreaterThan(breakpointIndex);
+  it('gives inputs at least a 44px minimum touch target at all viewport widths, not just tablet', () => {
+    const classIndex = css.indexOf('.input {');
+    const closeIndex = css.indexOf('}', classIndex);
+    const block = css.slice(classIndex, closeIndex);
+    const match = block.match(/min-height:\s*(\d+)px/);
+    expect(match).not.toBeNull();
+    expect(Number(match[1])).toBeGreaterThanOrEqual(44);
   });
 
   it('widens the main container within the tablet-landscape breakpoint', () => {
