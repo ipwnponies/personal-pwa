@@ -4,9 +4,9 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { useSwipeNumber } from './useSwipeNumber';
 
 // eslint-disable-next-line react/prop-types
-function Harness({ min = 1, max = 30, initial = 5 }) {
+function Harness({ min = 1, max = 30, initial = 5, step = 1 }) {
   const [value, setValue] = useState(initial);
-  const field = useSwipeNumber(value, setValue, min, max);
+  const field = useSwipeNumber(value, setValue, min, max, step);
   return (
     <input
       aria-label="swipe-input"
@@ -99,5 +99,15 @@ describe('useSwipeNumber', () => {
     fireEvent.touchMove(input, { touches: [{ clientY: 500 }] });
     fireEvent.touchEnd(input, { changedTouches: [{ clientY: 500 }] });
     expect(input.value).toBe('2');
+  });
+
+  it('scales swipe steps by the step parameter', () => {
+    render(<Harness min={0} max={1000} initial={100} step={5} />);
+    const input = screen.getByLabelText('swipe-input');
+    // deltaY of 60 past the threshold crosses 3 steps at PIXELS_PER_STEP=20
+    fireEvent.touchStart(input, { touches: [{ clientY: 200 }] });
+    fireEvent.touchMove(input, { touches: [{ clientY: 140 }] });
+    fireEvent.touchEnd(input, { changedTouches: [{ clientY: 140 }] });
+    expect(input.value).toBe('115');
   });
 });

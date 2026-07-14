@@ -16,6 +16,7 @@ import { pwaMetaTags } from '../../components/layout';
 import styles from './index.module.css';
 
 const STORAGE_KEY = 'fitness-inputs';
+const WEIGHT_SWIPE_STEP = 5;
 
 function loadStoredInputs() {
   if (typeof window === 'undefined') return null;
@@ -84,6 +85,50 @@ ResultTable.propTypes = {
   highlightedKey: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
 };
 
+function SwipeNumberField({ label, field, min }) {
+  return (
+    <label className={styles.field}>
+      <span>{label}</span>
+      <div className={styles.swipeInputWrap}>
+        <input
+          type="number"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          min={min}
+          value={field.inputValue}
+          placeholder={field.placeholder}
+          onChange={field.onChange}
+          onFocus={field.onFocus}
+          onBlur={field.onBlur}
+          onTouchStart={field.onTouchStart}
+          onTouchMove={field.onTouchMove}
+          onTouchEnd={field.onTouchEnd}
+          className={styles.input}
+        />
+        <span className={`${styles.swipeChevrons} ${styles.swipeHint}`} aria-hidden="true">
+          <span>▲</span>
+          <span>▼</span>
+        </span>
+      </div>
+    </label>
+  );
+}
+
+SwipeNumberField.propTypes = {
+  label: PropTypes.string.isRequired,
+  field: PropTypes.shape({
+    inputValue: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+    placeholder: PropTypes.string,
+    onChange: PropTypes.func.isRequired,
+    onFocus: PropTypes.func.isRequired,
+    onBlur: PropTypes.func.isRequired,
+    onTouchStart: PropTypes.func.isRequired,
+    onTouchMove: PropTypes.func.isRequired,
+    onTouchEnd: PropTypes.func.isRequired,
+  }).isRequired,
+  min: PropTypes.number.isRequired,
+};
+
 export default function FitnessCalculator() {
   const { basePath } = useRouter();
   const [weight, setWeight] = useState(100);
@@ -109,7 +154,7 @@ export default function FitnessCalculator() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ weight, repetitions }));
   }, [weight, repetitions, hydrated]);
 
-  const weightField = useSwipeNumber(weight, setWeight, 0, Infinity);
+  const weightField = useSwipeNumber(weight, setWeight, 0, Infinity, WEIGHT_SWIPE_STEP);
   const repsField = useSwipeNumber(repetitions, setRepetitions, REPETITION_MIN, Infinity);
 
   const calculation = useMemo(() => {
@@ -159,41 +204,8 @@ export default function FitnessCalculator() {
         </div>
 
         <form className={styles.form}>
-          <label className={styles.field}>
-            <span>Weight used</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              min="0"
-              value={weightField.inputValue}
-              placeholder={weightField.placeholder}
-              onChange={weightField.onChange}
-              onFocus={weightField.onFocus}
-              onBlur={weightField.onBlur}
-              className={styles.input}
-            />
-          </label>
-
-          <label className={styles.field}>
-            <span>Repetitions</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              min={REPETITION_MIN}
-              value={repsField.inputValue}
-              placeholder={repsField.placeholder}
-              onChange={repsField.onChange}
-              onFocus={repsField.onFocus}
-              onBlur={repsField.onBlur}
-              onTouchStart={repsField.onTouchStart}
-              onTouchMove={repsField.onTouchMove}
-              onTouchEnd={repsField.onTouchEnd}
-              className={styles.input}
-            />
-          </label>
-
+          <SwipeNumberField label="Weight used" field={weightField} min={0} />
+          <SwipeNumberField label="Repetitions" field={repsField} min={REPETITION_MIN} />
         </form>
 
         {calculation.error ? (
