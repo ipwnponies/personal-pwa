@@ -100,6 +100,7 @@ function SwipeNumberField({ label, field, min }) {
           onChange={field.onChange}
           onFocus={field.onFocus}
           onBlur={field.onBlur}
+          onKeyDown={field.onKeyDown}
           onTouchStart={field.onTouchStart}
           onTouchMove={field.onTouchMove}
           onTouchEnd={field.onTouchEnd}
@@ -122,6 +123,7 @@ SwipeNumberField.propTypes = {
     onChange: PropTypes.func.isRequired,
     onFocus: PropTypes.func.isRequired,
     onBlur: PropTypes.func.isRequired,
+    onKeyDown: PropTypes.func.isRequired,
     onTouchStart: PropTypes.func.isRequired,
     onTouchMove: PropTypes.func.isRequired,
     onTouchEnd: PropTypes.func.isRequired,

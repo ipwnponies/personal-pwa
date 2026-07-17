@@ -16,6 +16,7 @@ function Harness({ min = 1, max = 30, initial = 5, step = 1 }) {
       onChange={field.onChange}
       onFocus={field.onFocus}
       onBlur={field.onBlur}
+      onKeyDown={field.onKeyDown}
       onTouchStart={field.onTouchStart}
       onTouchMove={field.onTouchMove}
       onTouchEnd={field.onTouchEnd}
@@ -54,6 +55,16 @@ describe('useSwipeNumber', () => {
     fireEvent.change(input, { target: { value: 'abc' } });
     fireEvent.blur(input);
     expect(input.value).toBe('5');
+  });
+
+  it('commits a typed value when Enter is pressed', () => {
+    render(<Harness min={1} max={30} initial={5} />);
+    const input = screen.getByLabelText('swipe-input');
+    input.focus();
+    fireEvent.change(input, { target: { value: '12' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(document.activeElement).not.toBe(input);
+    expect(input.value).toBe('12');
   });
 
   it('ignores small vertical touch moves under the swipe threshold', () => {
