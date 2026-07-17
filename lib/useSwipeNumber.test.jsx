@@ -110,4 +110,63 @@ describe('useSwipeNumber', () => {
     fireEvent.touchEnd(input, { changedTouches: [{ clientY: 140 }] });
     expect(input.value).toBe('115');
   });
+
+  it('snaps an off-grid value up to the nearest step on upward swipe', () => {
+    render(<Harness min={0} max={1000} initial={152} step={5} />);
+    const input = screen.getByLabelText('swipe-input');
+    fireEvent.touchStart(input, { touches: [{ clientY: 200 }] });
+    fireEvent.touchMove(input, { touches: [{ clientY: 175 }] });
+    fireEvent.touchEnd(input, { changedTouches: [{ clientY: 175 }] });
+    expect(input.value).toBe('155');
+  });
+
+  it('snaps an off-grid value down to the nearest step on downward swipe', () => {
+    render(<Harness min={0} max={1000} initial={152} step={5} />);
+    const input = screen.getByLabelText('swipe-input');
+    fireEvent.touchStart(input, { touches: [{ clientY: 100 }] });
+    fireEvent.touchMove(input, { touches: [{ clientY: 125 }] });
+    fireEvent.touchEnd(input, { changedTouches: [{ clientY: 125 }] });
+    expect(input.value).toBe('150');
+  });
+
+  it('continues by full steps after the initial off-grid snap', () => {
+    render(<Harness min={0} max={1000} initial={152} step={5} />);
+    const input = screen.getByLabelText('swipe-input');
+    // deltaY of 60 crosses 3 units: first snaps 152->155, then +5 twice -> 165
+    fireEvent.touchStart(input, { touches: [{ clientY: 200 }] });
+    fireEvent.touchMove(input, { touches: [{ clientY: 140 }] });
+    fireEvent.touchEnd(input, { changedTouches: [{ clientY: 140 }] });
+    expect(input.value).toBe('165');
+  });
+
+  it('only snaps once per gesture, even when direction reverses', () => {
+    render(<Harness min={0} max={1000} initial={152} step={5} />);
+    const input = screen.getByLabelText('swipe-input');
+    fireEvent.touchStart(input, { touches: [{ clientY: 200 }] });
+    // up past threshold: snaps 152 -> 155
+    fireEvent.touchMove(input, { touches: [{ clientY: 175 }] });
+    expect(input.value).toBe('155');
+    // back down by one full unit: no re-snap, just -5 -> 150
+    fireEvent.touchMove(input, { touches: [{ clientY: 195 }] });
+    fireEvent.touchEnd(input, { changedTouches: [{ clientY: 195 }] });
+    expect(input.value).toBe('150');
+  });
+
+  it('clamps the initial snap to max when it would overshoot', () => {
+    render(<Harness min={0} max={999} initial={997} step={5} />);
+    const input = screen.getByLabelText('swipe-input');
+    fireEvent.touchStart(input, { touches: [{ clientY: 200 }] });
+    fireEvent.touchMove(input, { touches: [{ clientY: 175 }] });
+    fireEvent.touchEnd(input, { changedTouches: [{ clientY: 175 }] });
+    expect(input.value).toBe('999');
+  });
+
+  it('clamps the initial snap to min when it would undershoot', () => {
+    render(<Harness min={2} max={1000} initial={3} step={5} />);
+    const input = screen.getByLabelText('swipe-input');
+    fireEvent.touchStart(input, { touches: [{ clientY: 100 }] });
+    fireEvent.touchMove(input, { touches: [{ clientY: 125 }] });
+    fireEvent.touchEnd(input, { changedTouches: [{ clientY: 125 }] });
+    expect(input.value).toBe('2');
+  });
 });
