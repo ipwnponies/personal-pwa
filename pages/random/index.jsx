@@ -99,6 +99,7 @@ function DiceRoll() {
             onChange={lower.onChange}
             onFocus={lower.onFocus}
             onBlur={lower.onBlur}
+            onKeyDown={lower.onKeyDown}
             onTouchStart={lower.onTouchStart}
             onTouchMove={lower.onTouchMove}
             onTouchEnd={lower.onTouchEnd}
@@ -119,6 +120,7 @@ function DiceRoll() {
             onChange={upper.onChange}
             onFocus={upper.onFocus}
             onBlur={upper.onBlur}
+            onKeyDown={upper.onKeyDown}
             onTouchStart={upper.onTouchStart}
             onTouchMove={upper.onTouchMove}
             onTouchEnd={upper.onTouchEnd}
@@ -141,6 +143,7 @@ function DiceRoll() {
           onChange={dice.onChange}
           onFocus={dice.onFocus}
           onBlur={dice.onBlur}
+          onKeyDown={dice.onKeyDown}
           onTouchStart={dice.onTouchStart}
           onTouchMove={dice.onTouchMove}
           onTouchEnd={dice.onTouchEnd}
@@ -206,6 +209,7 @@ function ChoiceRow({ label, weightValue, totalWeight, onChangeLabel, onChangeWei
         onChange={weight.onChange}
         onFocus={weight.onFocus}
         onBlur={weight.onBlur}
+        onKeyDown={weight.onKeyDown}
         onTouchStart={weight.onTouchStart}
         onTouchMove={weight.onTouchMove}
         onTouchEnd={weight.onTouchEnd}
