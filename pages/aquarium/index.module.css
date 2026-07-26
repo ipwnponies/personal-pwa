@@ -1,0 +1,97 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: relative;
+  background: #08324a;
+}
+
+.muteToggle {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 2;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.tank {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: linear-gradient(180deg, #0a4a6e 0%, #062f45 100%);
+  transition: filter 0.4s ease;
+}
+
+.dirty {
+  filter: sepia(0.5) hue-rotate(40deg) saturate(1.4) brightness(0.9);
+}
+
+.creature {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: none;
+  background: none;
+  padding: 0.5rem;
+  cursor: pointer;
+  line-height: 1;
+  animation: swim 6s ease-in-out infinite alternate;
+}
+
+.hungry {
+  opacity: 0.6;
+}
+
+.sad {
+  filter: grayscale(0.6);
+  animation-duration: 10s;
+}
+
+.egg {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  border: none;
+  background: none;
+  font-size: 44px;
+  cursor: pointer;
+  animation: wobble 1.2s ease-in-out infinite;
+}
+
+.palette {
+  display: flex;
+  justify-content: space-around;
+  padding: 0.75rem;
+  background: #04202f;
+}
+
+.tool {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 1rem;
+  border: 3px solid transparent;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 2rem;
+  cursor: pointer;
+}
+
+.selected {
+  border-color: #ffd54a;
+  background: rgba(255, 213, 74, 0.25);
+}
+
+@keyframes swim {
+  from { transform: translate(-50%, -50%) translateX(-8px); }
+  to { transform: translate(-50%, -50%) translateX(8px); }
+}
+
+@keyframes wobble {
+  0%, 100% { transform: translateX(-50%) rotate(-8deg); }
+  50% { transform: translateX(-50%) rotate(8deg); }
+}
