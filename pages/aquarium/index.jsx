@@ -19,6 +19,11 @@ import {
 import { createSound } from '../../lib/aquarium/sound';
 
 const TICK_MS = 2000;
+const DRAG_SAMPLE_MS = 120;
+const LONG_PRESS_MS = 500;
+// Touch jitter on a stationary tap can still fire a pointermove; require real
+// movement before treating a press as a drag, so a tap never double-acts.
+const MIN_DRAG_PX = 12;
 const TOOLS = [
   { key: 'food', label: 'Food', emoji: '🍤' },
   { key: 'sponge', label: 'Sponge', emoji: '🧽' },
@@ -40,6 +45,9 @@ export default function Aquarium() {
   const [tank, setTank] = useState(null);
   const soundRef = useRef(null);
   const tankRef = useRef(null);
+  const dragRef = useRef({ active: false, lastSample: 0 });
+  const pressTimerRef = useRef(null);
+  const pressFiredRef = useRef(false);
 
   // Mount: load, catch up offline decay, wire sound.
   useEffect(() => {
@@ -78,20 +86,83 @@ export default function Aquarium() {
 
   const selectTool = (key) => commit((prev) => ({ ...prev, selectedTool: key }), null);
 
-  const handleTankClick = (e) => {
-    if (!tank || e.target !== tankRef.current) return;
-    const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+  const actOnTank = (x, y) => {
     if (tank.selectedTool === 'food') commit((prev) => feedTank(prev, x, y), 'nom');
     else if (tank.selectedTool === 'sponge') commit((prev) => cleanTank(prev), 'sparkle');
     else commit((prev) => playTank(prev, x, y), 'pop');
   };
 
-  const handleCreatureClick = (e, id) => {
-    e.stopPropagation();
-    if (!tank) return;
+  const actOnCreature = (id) => {
     if (tank.selectedTool === 'food') commit((prev) => feedCreature(prev, id), 'nom');
     else if (tank.selectedTool === 'sponge') commit((prev) => cleanTank(prev), 'sparkle');
     else commit((prev) => playCreature(prev, id), 'pop');
+  };
+
+  const handleTankClick = (e) => {
+    if (!tank || e.target !== tankRef.current) return;
+    const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+    actOnTank(x, y);
+  };
+
+  const handleCreatureClick = (e, id) => {
+    e.stopPropagation();
+    if (!tank) return;
+    // A long-press already acted on this press; skip the trailing click it produces.
+    if (pressFiredRef.current) {
+      pressFiredRef.current = false;
+      return;
+    }
+    actOnCreature(id);
+  };
+
+  // Drag with food/sponge/toy selected repeatedly acts on the tank along the
+  // pointer path, sampled to avoid flooding state updates.
+  const handleTankPointerDown = (e) => {
+    if (e.target !== tankRef.current) return;
+    dragRef.current = {
+      active: true,
+      dragging: false,
+      lastSample: 0,
+      startX: e.clientX,
+      startY: e.clientY,
+    };
+  };
+
+  const handleTankPointerMove = (e) => {
+    if (!tank || !dragRef.current.active) return;
+    const drag = dragRef.current;
+    if (!drag.dragging) {
+      const moved = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
+      if (moved < MIN_DRAG_PX) return;
+      drag.dragging = true;
+    }
+    const now = Date.now();
+    if (now - drag.lastSample < DRAG_SAMPLE_MS) return;
+    drag.lastSample = now;
+    const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+    actOnTank(x, y);
+  };
+
+  const endTankDrag = () => {
+    dragRef.current.active = false;
+  };
+
+  // Long-press on a creature: hold to feed/play/pet without a directed tap.
+  const handleCreaturePointerDown = (e, id) => {
+    e.stopPropagation();
+    pressFiredRef.current = false;
+    pressTimerRef.current = setTimeout(() => {
+      pressFiredRef.current = true;
+      actOnCreature(id);
+    }, LONG_PRESS_MS);
+  };
+
+  const cancelCreaturePress = (e) => {
+    e.stopPropagation();
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
   };
 
   const handleHatch = (e) => {
@@ -134,6 +205,11 @@ export default function Aquarium() {
         ref={tankRef}
         className={`${styles.tank} ${dirty ? styles.dirty : ''}`}
         onClick={handleTankClick}
+        onPointerDown={handleTankPointerDown}
+        onPointerMove={handleTankPointerMove}
+        onPointerUp={endTankDrag}
+        onPointerLeave={endTankDrag}
+        onPointerCancel={endTankDrag}
         role="presentation"
       >
         {tank.creatures.map((c) => {
@@ -156,6 +232,10 @@ export default function Aquarium() {
               }}
               aria-label={species.name}
               onClick={(e) => handleCreatureClick(e, c.id)}
+              onPointerDown={(e) => handleCreaturePointerDown(e, c.id)}
+              onPointerUp={cancelCreaturePress}
+              onPointerLeave={cancelCreaturePress}
+              onPointerCancel={cancelCreaturePress}
             >
               {species.emoji[c.stage]}
             </button>
