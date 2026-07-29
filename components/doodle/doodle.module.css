@@ -1,0 +1,45 @@
+.wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.stage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none; /* stop the browser from scrolling/zooming during play */
+  background: #fdfdfd;
+  user-select: none;
+}
+
+.toolbar {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.toolButton {
+  width: 48px;
+  height: 48px;
+  font-size: 1.4rem;
+  line-height: 1;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+}
+
+.pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: doodlePulse 300ms ease;
+}
+
+@keyframes doodlePulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
