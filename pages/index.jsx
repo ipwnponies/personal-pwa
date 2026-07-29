@@ -34,6 +34,9 @@ export default function Home({ allPostsData }) {
           <Link href="/random/">Random App</Link>
         </p>
         <p>
+          <Link href="/doodle/">Doodle App</Link>
+        </p>
+        <p>
           <Link href="/settings">Settings</Link>
         </p>
       </section>
