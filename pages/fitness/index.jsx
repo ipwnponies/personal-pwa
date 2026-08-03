@@ -12,6 +12,7 @@ import {
   buildRepMaxTable,
 } from '../../lib/epley';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
+import { usePageBackground } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
 import styles from './index.module.css';
 
@@ -132,6 +133,7 @@ SwipeNumberField.propTypes = {
 };
 
 export default function FitnessCalculator() {
+  usePageBackground('#ffffff');
   const { basePath } = useRouter();
   const [weight, setWeight] = useState(100);
   const [repetitions, setRepetitions] = useState(5);

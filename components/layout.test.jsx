@@ -1,7 +1,12 @@
 import React from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { pwaMetaTags } from './layout';
+import { render } from '@testing-library/react';
+import Layout, { pwaMetaTags } from './layout';
+
+vi.mock('next/router', () => ({
+  useRouter: () => ({ basePath: '' }),
+}));
 
 describe('pwaMetaTags apple-touch-startup-image', () => {
   it('links the default root splash image with the iPad 6th-gen media query', () => {
@@ -18,5 +23,30 @@ describe('pwaMetaTags apple-touch-startup-image', () => {
       <>{pwaMetaTags('/base', { splashFileName: 'splash-fitness-1536x2048.png' })}</>,
     );
     expect(html).toContain('href="/base/icons/splash-fitness-1536x2048.png"');
+  });
+});
+
+describe('pwaMetaTags theme-color', () => {
+  it('defaults to matching the manifest theme_color/background_color (#ffffff)', () => {
+    const html = renderToStaticMarkup(<>{pwaMetaTags('/base')}</>);
+    expect(html).toContain('<meta name="theme-color" content="#ffffff"/>');
+  });
+
+  it('allows overriding theme-color for pages with a non-default page background', () => {
+    const html = renderToStaticMarkup(<>{pwaMetaTags('/base', { themeColor: '#1a1a2e' })}</>);
+    expect(html).toContain('<meta name="theme-color" content="#1a1a2e"/>');
+  });
+});
+
+describe('Layout background', () => {
+  it('sets html and body background to white on mount', () => {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = '#ffffff';
+    const expected = probe.style.backgroundColor;
+
+    render(<Layout>content</Layout>);
+
+    expect(document.documentElement.style.backgroundColor).toBe(expected);
+    expect(document.body.style.backgroundColor).toBe(expected);
   });
 });
