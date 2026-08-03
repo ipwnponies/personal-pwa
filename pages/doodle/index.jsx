@@ -3,9 +3,11 @@ import { useRouter } from 'next/router';
 import React from 'react';
 import DoodleCanvas from '../../components/doodle/DoodleCanvas';
 import { pwaMetaTags } from '../../components/layout';
+import { usePageBackground } from '../../lib/usePageBackground';
 import styles from './index.module.css';
 
 export default function DoodlePage() {
+  usePageBackground('#fdfdfd');
   const { basePath } = useRouter();
   return (
     <>

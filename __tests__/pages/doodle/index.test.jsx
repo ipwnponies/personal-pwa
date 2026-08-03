@@ -19,4 +19,15 @@ describe('DoodlePage', () => {
     expect(screen.getByLabelText('Doodle canvas')).toBeInTheDocument();
     expect(screen.getByLabelText('Clear canvas')).toBeInTheDocument();
   });
+
+  it('sets html and body background to match the canvas stage on mount', () => {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = '#fdfdfd';
+    const expected = probe.style.backgroundColor;
+
+    render(<DoodlePage />);
+
+    expect(document.documentElement.style.backgroundColor).toBe(expected);
+    expect(document.body.style.backgroundColor).toBe(expected);
+  });
 });
