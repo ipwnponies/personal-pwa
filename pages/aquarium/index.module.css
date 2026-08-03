@@ -41,6 +41,7 @@
   cursor: pointer;
   line-height: 1;
   animation: swim 6s ease-in-out infinite alternate;
+  transition: left 2.5s ease-in-out, top 2.5s ease-in-out;
 }
 
 .hungry {
@@ -50,6 +51,18 @@
 .sad {
   filter: grayscale(0.6);
   animation-duration: 10s;
+}
+
+.pulse {
+  animation: pulse 0.5s ease-in-out;
+}
+
+.effect {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 28px;
+  pointer-events: none;
+  animation: effectPop 0.6s ease-out forwards;
 }
 
 .egg {
@@ -89,6 +102,17 @@
 @keyframes swim {
   from { transform: translate(-50%, -50%) translateX(-8px); }
   to { transform: translate(-50%, -50%) translateX(8px); }
+}
+
+@keyframes pulse {
+  0% { transform: translate(-50%, -50%) scale(1); filter: brightness(1); }
+  40% { transform: translate(-50%, -50%) scale(1.35); filter: brightness(1.5); }
+  100% { transform: translate(-50%, -50%) scale(1); filter: brightness(1); }
+}
+
+@keyframes effectPop {
+  0% { transform: translate(-50%, -50%) scale(0.4); opacity: 1; }
+  100% { transform: translate(-50%, -80%) scale(1.3); opacity: 0; }
 }
 
 @keyframes wobble {

@@ -6,8 +6,10 @@ import styles from './index.module.css';
 import { pwaMetaTags } from '../../components/layout';
 import { getSpecies } from '../../lib/aquarium/creatures';
 import { loadTank, saveTank } from '../../lib/aquarium/storage';
+import { generateId } from '../../lib/random';
 import {
   applyElapsed,
+  wanderCreatures,
   feedTank,
   playTank,
   cleanTank,
@@ -21,14 +23,17 @@ import { createSound } from '../../lib/aquarium/sound';
 const TICK_MS = 2000;
 const DRAG_SAMPLE_MS = 120;
 const LONG_PRESS_MS = 500;
+const PULSE_MS = 500;
+const EFFECT_MS = 600;
 // Touch jitter on a stationary tap can still fire a pointermove; require real
 // movement before treating a press as a drag, so a tap never double-acts.
 const MIN_DRAG_PX = 12;
 const TOOLS = [
-  { key: 'food', label: 'Food', emoji: '🍤' },
-  { key: 'sponge', label: 'Sponge', emoji: '🧽' },
-  { key: 'toy', label: 'Toy', emoji: '🎾' },
+  { key: 'food', label: 'Food', emoji: '🍤', effect: '🍤' },
+  { key: 'sponge', label: 'Sponge', emoji: '🧽', effect: '✨' },
+  { key: 'toy', label: 'Toy', emoji: '🎾', effect: '💗' },
 ];
+const TOOLS_BY_KEY = Object.fromEntries(TOOLS.map((t) => [t.key, t]));
 
 // Click position within an element as 0..1 fractions; guards a zero-size rect.
 const rectFraction = (el, clientX, clientY) => {
@@ -43,6 +48,8 @@ const rectFraction = (el, clientX, clientY) => {
 export default function Aquarium() {
   const { basePath } = useRouter();
   const [tank, setTank] = useState(null);
+  const [pulsingIds, setPulsingIds] = useState(() => new Set());
+  const [effects, setEffects] = useState([]);
   const soundRef = useRef(null);
   const tankRef = useRef(null);
   const dragRef = useRef({ active: false, lastSample: 0 });
@@ -58,15 +65,16 @@ export default function Aquarium() {
     soundRef.current = createSound(caughtUp.soundOn);
   }, []);
 
-  // Persist + slow decay tick while mounted.
+  // Persist + slow decay + wander tick while mounted.
   useEffect(() => {
     if (!tank) return undefined;
     const id = setInterval(() => {
       setTank((prev) => {
         if (!prev) return prev;
         const now = Date.now();
-        const next = applyElapsed(prev, now - prev.lastSeen, now);
-        return saveTank(next, now);
+        const decayed = applyElapsed(prev, now - prev.lastSeen, now);
+        const wandered = wanderCreatures(decayed);
+        return saveTank(wandered, now);
       });
     }, TICK_MS);
     return () => clearInterval(id);
@@ -86,13 +94,38 @@ export default function Aquarium() {
 
   const selectTool = (key) => commit((prev) => ({ ...prev, selectedTool: key }), null);
 
+  // Brief bounce/flash on the exact creature a directed action touched —
+  // visible confirmation even when its needs were already maxed out.
+  const pulse = (id) => {
+    setPulsingIds((prev) => new Set(prev).add(id));
+    setTimeout(() => {
+      setPulsingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, PULSE_MS);
+  };
+
+  // Ripple at the tap/drag point for tank-wide actions, since which
+  // creature(s) actually got fed/played isn't known at this layer.
+  const spawnEffect = (x, y, emoji) => {
+    const effectId = generateId();
+    setEffects((prev) => [...prev, { id: effectId, x, y, emoji }]);
+    setTimeout(() => {
+      setEffects((prev) => prev.filter((e) => e.id !== effectId));
+    }, EFFECT_MS);
+  };
+
   const actOnTank = (x, y) => {
+    spawnEffect(x, y, TOOLS_BY_KEY[tank.selectedTool].effect);
     if (tank.selectedTool === 'food') commit((prev) => feedTank(prev, x, y), 'nom');
     else if (tank.selectedTool === 'sponge') commit((prev) => cleanTank(prev), 'sparkle');
     else commit((prev) => playTank(prev, x, y), 'pop');
   };
 
   const actOnCreature = (id) => {
+    pulse(id);
     if (tank.selectedTool === 'food') commit((prev) => feedCreature(prev, id), 'nom');
     else if (tank.selectedTool === 'sponge') commit((prev) => cleanTank(prev), 'sparkle');
     else commit((prev) => playCreature(prev, id), 'pop');
@@ -218,6 +251,7 @@ export default function Aquarium() {
           const classes = [styles.creature];
           if (c.hunger < MET_THRESHOLD) classes.push(styles.hungry);
           if (c.happiness < MET_THRESHOLD) classes.push(styles.sad);
+          if (pulsingIds.has(c.id)) classes.push(styles.pulse);
           return (
             <button
               type="button"
@@ -241,6 +275,17 @@ export default function Aquarium() {
             </button>
           );
         })}
+
+        {effects.map((e) => (
+          <span
+            key={e.id}
+            className={styles.effect}
+            style={{ left: `${e.x * 100}%`, top: `${e.y * 100}%` }}
+            aria-hidden="true"
+          >
+            {e.emoji}
+          </span>
+        ))}
 
         {tank.egg && (
           <button
