@@ -348,7 +348,10 @@ export default function Random() {
       onTouchMove={pageSwipe.onTouchMove}
       onTouchEnd={pageSwipe.onTouchEnd}
     >
-      <Head>{pwaMetaTags(basePath, { themeColor: '#1a1a2e' })}</Head>
+      <Head>
+        {pwaMetaTags(basePath, { themeColor: '#1a1a2e', manifestPath: 'random-manifest.json' })}
+        <style>{'html,body{background-color:#1a1a2e}'}</style>
+      </Head>
       <Tabs
         className={styles.tabs}
         selectedIndex={tabIndex}
