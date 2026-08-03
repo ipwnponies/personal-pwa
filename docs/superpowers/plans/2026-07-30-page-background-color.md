@@ -406,3 +406,25 @@ git commit -m "fix: set Layout html/body background and align theme-color with m
 - **Spec coverage:** per-page `html`/`body` bg ownership (spec §Fix 1) → Tasks 1–5. Manifest/meta `theme-color` alignment (spec §Fix 2) → Task 5. No global.css default, no safe-area padding change (spec §Fix 3 / Out of scope) → explicitly called out in Global Constraints, no task touches `styles/global.css` or adds `env(safe-area-inset-*)`. `volta` page and `pages/_offline.jsx`/`pages/__sw-reset.jsx` are intentionally not touched — they have no background styling of their own today (inherit default), so there's no white-border bug to fix there.
 - **Placeholder scan:** no TBD/TODO; every step has literal code.
 - **Type/name consistency:** every consumer imports the same `usePageBackground` named export from `lib/usePageBackground.js` and calls it with a single `color` string argument, matching Task 1's produced interface.
+
+## Deviations from this plan (found during review, after Task 5)
+
+A pre-merge review found this plan's Global Constraints wrongly assumed the
+`theme-color` alignment "only affects the main-site light pages" —
+`pwaMetaTags` is shared, so it also reached `random`. That, plus three
+related gaps the plan didn't anticipate, were fixed on top of this plan's
+5 tasks. Full detail in the spec's Addendum
+(`docs/superpowers/specs/2026-07-30-page-background-color-design.md`):
+
+- `pwaMetaTags` gained a `themeColor` option (default `#FFFFFF`) so
+  `random`/`doodle` can override it instead of inheriting the light-page
+  default.
+- `pages/_app.jsx` now imports `styles/global.css` — it was never imported
+  anywhere, so its `html`/`body` margin reset was dead code.
+- `random` gained an inline `<style>` in its own `<Head>` for first-paint
+  background (the hook only applies post-hydration) and a dedicated
+  `public/random-manifest.json` for its installed-PWA splash color
+  (it was inheriting the root manifest's white).
+- `__tests__/components/layout.test.jsx` (Task 5) was merged into the
+  pre-existing `components/layout.test.jsx` — this repo co-locates
+  component tests; only `pages/` tests live under `__tests__/`.
