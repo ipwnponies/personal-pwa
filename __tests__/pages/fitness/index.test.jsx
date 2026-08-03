@@ -249,4 +249,15 @@ describe('FitnessCalculator', () => {
     const percentageRow = screen.getByText('100%').closest('tr');
     expect(percentageRow.className).not.toMatch(/rowHighlighted/);
   });
+
+  it('sets html and body background to white on mount', () => {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = '#ffffff';
+    const expected = probe.style.backgroundColor;
+
+    render(<FitnessCalculator />);
+
+    expect(document.documentElement.style.backgroundColor).toBe(expected);
+    expect(document.body.style.backgroundColor).toBe(expected);
+  });
 });
