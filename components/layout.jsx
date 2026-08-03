@@ -6,6 +6,7 @@ import PropTypes from 'prop-types';
 
 import styles from './layout.module.css';
 import utilStyles from '../styles/utils.module.css';
+import { usePageBackground } from '../lib/usePageBackground';
 
 const name = 'ipwnponies';
 export const siteTitle = 'Next.js Sample Website';
@@ -43,7 +44,7 @@ export function pwaMetaTags(basePath, options = {}) {
       <meta name="mobile-web-app-capable" content="yes" />
       <meta name="msapplication-TileColor" content="#2B5797" />
       <meta name="msapplication-tap-highlight" content="no" />
-      <meta name="theme-color" content="#000000" />
+      <meta name="theme-color" content="#ffffff" />
 
       <link
         rel="apple-touch-icon"
@@ -102,6 +103,7 @@ export function pwaMetaTags(basePath, options = {}) {
 }
 
 export default function Layout({ children, home }) {
+  usePageBackground('#ffffff');
   const { basePath } = useRouter();
   return (
     <div className={styles.container}>
