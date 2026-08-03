@@ -18,3 +18,16 @@ describe('Random page head', () => {
     expect(pwaMetaTags).toHaveBeenCalledWith('/base');
   });
 });
+
+describe('Random page background', () => {
+  it('sets html and body background to the page theme color on mount', () => {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = '#1a1a2e';
+    const expected = probe.style.backgroundColor;
+
+    render(<Random />);
+
+    expect(document.documentElement.style.backgroundColor).toBe(expected);
+    expect(document.body.style.backgroundColor).toBe(expected);
+  });
+});

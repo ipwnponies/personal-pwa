@@ -7,6 +7,7 @@ import 'react-tabs/style/react-tabs.css';
 import styles from './index.module.css';
 import { weightedRandomChoice, generateId } from '../../lib/random';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
+import { usePageBackground } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
 
 const HORIZONTAL_SWIPE_THRESHOLD = 50;
@@ -327,6 +328,7 @@ function WeightedChoices() {
 const TAB_COUNT = 2;
 
 export default function Random() {
+  usePageBackground('#1a1a2e');
   const { basePath } = useRouter();
   const [tabIndex, setTabIndex] = useState(0);
 
