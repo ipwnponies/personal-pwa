@@ -13,9 +13,9 @@ vi.mock('../../../components/layout', () => ({
 }));
 
 describe('Random page head', () => {
-  it('calls pwaMetaTags with the router basePath and default (root) options', () => {
+  it('calls pwaMetaTags with the router basePath and the page theme color', () => {
     render(<Random />);
-    expect(pwaMetaTags).toHaveBeenCalledWith('/base');
+    expect(pwaMetaTags).toHaveBeenCalledWith('/base', { themeColor: '#1a1a2e' });
   });
 });
 

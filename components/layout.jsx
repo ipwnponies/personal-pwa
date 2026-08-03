@@ -31,6 +31,7 @@ export function pwaMetaTags(basePath, options = {}) {
     iconPrefix = 'android-launchericon',
     appleIconPrefix = 'apple-touch-icon',
     splashFileName = 'splash-root-1536x2048.png',
+    themeColor = '#ffffff',
   } = options;
 
   return (
@@ -44,7 +45,7 @@ export function pwaMetaTags(basePath, options = {}) {
       <meta name="mobile-web-app-capable" content="yes" />
       <meta name="msapplication-TileColor" content="#2B5797" />
       <meta name="msapplication-tap-highlight" content="no" />
-      <meta name="theme-color" content="#ffffff" />
+      <meta name="theme-color" content={themeColor} />
 
       <link
         rel="apple-touch-icon"

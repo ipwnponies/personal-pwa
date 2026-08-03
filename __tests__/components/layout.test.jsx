@@ -26,4 +26,10 @@ describe('pwaMetaTags', () => {
     const themeColor = container.querySelector('meta[name="theme-color"]');
     expect(themeColor.getAttribute('content')).toBe('#ffffff');
   });
+
+  it('allows overriding theme-color for pages with a non-default page background', () => {
+    const { container } = render(<>{pwaMetaTags('/base', { themeColor: '#1a1a2e' })}</>);
+    const themeColor = container.querySelector('meta[name="theme-color"]');
+    expect(themeColor.getAttribute('content')).toBe('#1a1a2e');
+  });
 });
