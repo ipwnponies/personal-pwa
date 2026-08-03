@@ -16,6 +16,7 @@ export default function DoodlePage() {
           appName: 'Doodle',
           description: 'A simple tap-and-draw musical sandbox for young children',
           path: '/doodle',
+          themeColor: '#fdfdfd',
         })}
         <title>Doodle</title>
       </Head>
