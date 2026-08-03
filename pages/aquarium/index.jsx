@@ -6,7 +6,7 @@ import styles from './index.module.css';
 import { pwaMetaTags } from '../../components/layout';
 import { getSpecies } from '../../lib/aquarium/creatures';
 import { loadTank, saveTank } from '../../lib/aquarium/storage';
-import { generateId } from '../../lib/random';
+import { clamp, generateId } from '../../lib/random';
 import {
   applyElapsed,
   wanderCreatures,
@@ -17,14 +17,22 @@ import {
   playCreature,
   hatchEgg,
   MET_THRESHOLD,
+  NEED_FLOOR,
+  NEED_MAX,
 } from '../../lib/aquarium/simulation';
 import { createSound } from '../../lib/aquarium/sound';
 
 const TICK_MS = 2000;
+const WANDER_TICK_MS = 900;
 const DRAG_SAMPLE_MS = 120;
 const LONG_PRESS_MS = 500;
-const PULSE_MS = 500;
-const EFFECT_MS = 600;
+const PULSE_MS = 650;
+const EFFECT_MS = 900;
+
+// Maps a need value (floor..max) to a continuous red-to-green hue, so a
+// creature's mood is visible at a glance without any numbers.
+const moodHue = (value) =>
+  Math.round(clamp((value - NEED_FLOOR) / (NEED_MAX - NEED_FLOOR), 0, 1) * 120);
 // Touch jitter on a stationary tap can still fire a pointermove; require real
 // movement before treating a press as a drag, so a tap never double-acts.
 const MIN_DRAG_PX = 12;
@@ -65,22 +73,31 @@ export default function Aquarium() {
     soundRef.current = createSound(caughtUp.soundOn);
   }, []);
 
-  // Persist + slow decay + wander tick while mounted.
+  // Persist + slow decay tick while mounted.
   useEffect(() => {
     if (!tank) return undefined;
     const id = setInterval(() => {
       setTank((prev) => {
         if (!prev) return prev;
         const now = Date.now();
-        const decayed = applyElapsed(prev, now - prev.lastSeen, now);
-        const wandered = wanderCreatures(decayed);
-        return saveTank(wandered, now);
+        const next = applyElapsed(prev, now - prev.lastSeen, now);
+        return saveTank(next, now);
       });
     }, TICK_MS);
     return () => clearInterval(id);
     // Deliberately depends on presence, not identity: the interval only needs
     // to start once tank first loads, and setTank/applyElapsed/saveTank are
     // stable across renders.
+  }, [tank !== null]);
+
+  // Faster, uncoupled wander tick so the tank feels alive between decay ticks.
+  // Depends on presence, not identity, same as the decay tick above.
+  useEffect(() => {
+    if (!tank) return undefined;
+    const id = setInterval(() => {
+      setTank((prev) => (prev ? wanderCreatures(prev) : prev));
+    }, WANDER_TICK_MS);
+    return () => clearInterval(id);
   }, [tank !== null]);
 
   const commit = useCallback((updater, cue) => {
@@ -124,8 +141,10 @@ export default function Aquarium() {
     else commit((prev) => playTank(prev, x, y), 'pop');
   };
 
-  const actOnCreature = (id) => {
+  const actOnCreature = (creature) => {
+    const { id, x, y } = creature;
     pulse(id);
+    spawnEffect(x, y, TOOLS_BY_KEY[tank.selectedTool].effect);
     if (tank.selectedTool === 'food') commit((prev) => feedCreature(prev, id), 'nom');
     else if (tank.selectedTool === 'sponge') commit((prev) => cleanTank(prev), 'sparkle');
     else commit((prev) => playCreature(prev, id), 'pop');
@@ -137,7 +156,7 @@ export default function Aquarium() {
     actOnTank(x, y);
   };
 
-  const handleCreatureClick = (e, id) => {
+  const handleCreatureClick = (e, creature) => {
     e.stopPropagation();
     if (!tank) return;
     // A long-press already acted on this press; skip the trailing click it produces.
@@ -145,7 +164,7 @@ export default function Aquarium() {
       pressFiredRef.current = false;
       return;
     }
-    actOnCreature(id);
+    actOnCreature(creature);
   };
 
   // Drag with food/sponge/toy selected repeatedly acts on the tank along the
@@ -181,12 +200,12 @@ export default function Aquarium() {
   };
 
   // Long-press on a creature: hold to feed/play/pet without a directed tap.
-  const handleCreaturePointerDown = (e, id) => {
+  const handleCreaturePointerDown = (e, creature) => {
     e.stopPropagation();
     pressFiredRef.current = false;
     pressTimerRef.current = setTimeout(() => {
       pressFiredRef.current = true;
-      actOnCreature(id);
+      actOnCreature(creature);
     }, LONG_PRESS_MS);
   };
 
@@ -218,7 +237,11 @@ export default function Aquarium() {
     );
   }
 
-  const dirty = tank.tankCleanliness < MET_THRESHOLD;
+  // Continuous (not threshold-gated) murkiness, so cleaning is visible right away.
+  const dirtiness = clamp((NEED_MAX - tank.tankCleanliness) / (NEED_MAX - NEED_FLOOR), 0, 1);
+  const tankFilter = `sepia(${(0.55 * dirtiness).toFixed(2)}) `
+    + `saturate(${(1 + 0.5 * dirtiness).toFixed(2)}) `
+    + `brightness(${(1 - 0.15 * dirtiness).toFixed(2)})`;
 
   return (
     <div className={styles.page}>
@@ -236,7 +259,8 @@ export default function Aquarium() {
 
       <div
         ref={tankRef}
-        className={`${styles.tank} ${dirty ? styles.dirty : ''}`}
+        className={styles.tank}
+        style={{ filter: tankFilter }}
         onClick={handleTankClick}
         onPointerDown={handleTankPointerDown}
         onPointerMove={handleTankPointerMove}
@@ -252,6 +276,8 @@ export default function Aquarium() {
           if (c.hunger < MET_THRESHOLD) classes.push(styles.hungry);
           if (c.happiness < MET_THRESHOLD) classes.push(styles.sad);
           if (pulsingIds.has(c.id)) classes.push(styles.pulse);
+          // Continuous red-to-green mood dot: shows state instantly, not just past a threshold.
+          const hue = moodHue((c.hunger + c.happiness) / 2);
           return (
             <button
               type="button"
@@ -265,13 +291,18 @@ export default function Aquarium() {
                 filter: `hue-rotate(${species.hueDeg}deg)`,
               }}
               aria-label={species.name}
-              onClick={(e) => handleCreatureClick(e, c.id)}
-              onPointerDown={(e) => handleCreaturePointerDown(e, c.id)}
+              onClick={(e) => handleCreatureClick(e, c)}
+              onPointerDown={(e) => handleCreaturePointerDown(e, c)}
               onPointerUp={cancelCreaturePress}
               onPointerLeave={cancelCreaturePress}
               onPointerCancel={cancelCreaturePress}
             >
               {species.emoji[c.stage]}
+              <span
+                className={styles.moodDot}
+                style={{ backgroundColor: `hsl(${hue}, 85%, 50%)` }}
+                aria-hidden="true"
+              />
             </button>
           );
         })}
