@@ -68,7 +68,7 @@ function DiceRoll() {
   const [hasRolled, setHasRolled] = useState(false);
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
 
-  const lower = useSwipeNumber(lowerBound, setLowerBound, 1, 100);
+  const lower = useSwipeNumber(lowerBound, setLowerBound, 0, 100);
   const upper = useSwipeNumber(upperBound, setUpperBound, 1, 100);
   const dice = useSwipeNumber(numDice, setNumDice, 1, 20);
 
@@ -92,7 +92,7 @@ function DiceRoll() {
             type="number"
             inputMode="numeric"
             pattern="[0-9]*"
-            min={1}
+            min={0}
             max={100}
             className={styles.boundInput}
             value={lower.inputValue}
@@ -186,7 +186,7 @@ function ChoiceRow({ label, weightValue, totalWeight, onChangeLabel, onChangeWei
     [weightValue, onChangeWeight],
   );
 
-  const weight = useSwipeNumber(weightValue, setWeight, 1, 99);
+  const weight = useSwipeNumber(weightValue, setWeight, 0, 99);
   const percent = totalWeight > 0 ? Math.round((weightValue / totalWeight) * 100) : 0;
 
   return (
@@ -202,7 +202,7 @@ function ChoiceRow({ label, weightValue, totalWeight, onChangeLabel, onChangeWei
         type="number"
         inputMode="numeric"
         pattern="[0-9]*"
-        min={1}
+        min={0}
         max={99}
         className={styles.choiceWeightInput}
         value={weight.inputValue}
