@@ -60,4 +60,29 @@ describe('Aquarium page', () => {
     fireEvent.click(first, { clientX: 20, clientY: 20 });
     expect(screen.getAllByTestId('foodDrop').length).toBeGreaterThan(0);
   });
+
+  it('shows a want bubble on a creature with a low need', () => {
+    localStorage.setItem(
+      'aquarium-tank',
+      JSON.stringify({
+        version: 2,
+        lastSeen: Date.now(),
+        selectedTool: 'food',
+        soundOn: true,
+        tankCleanliness: 100,
+        eggProgress: 0,
+        egg: null,
+        foodDrops: [],
+        toyDrops: [],
+        dirtSpots: [],
+        creatures: [{
+          id: 'c1', species: 'clownfish', bornAt: 0, stage: 'baby',
+          hunger: 20, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0.5, y: 0.5,
+        }],
+      }),
+    );
+    render(<Aquarium />);
+    const creature = screen.getByTestId('creature');
+    expect(creature.textContent).toContain('🍤');
+  });
 });

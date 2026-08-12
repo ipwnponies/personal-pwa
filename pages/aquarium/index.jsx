@@ -13,10 +13,14 @@ import {
   dropToy,
   wipeDirtSpot,
   hatchEgg,
+  assignSeekTargets,
+  findDrop,
+  consumeDrop,
   MET_THRESHOLD,
   NEED_FLOOR,
   NEED_MAX,
 } from '../../lib/aquarium/simulation';
+import { createMovementState, stepMovement, wobbleOffset, CONTACT_RADIUS } from '../../lib/aquarium/movement';
 import { createSound } from '../../lib/aquarium/sound';
 
 const TICK_MS = 2000;
@@ -69,6 +73,7 @@ export default function Aquarium() {
   const soundRef = useRef(null);
   const tankRef = useRef(null);
   const dragRef = useRef({ active: false, lastSample: 0 });
+  const moveStatesRef = useRef(new Map());
 
   // Mount: load, catch up offline decay, wire sound.
   useEffect(() => {
@@ -128,6 +133,68 @@ export default function Aquarium() {
       setEffects((prev) => prev.filter((e) => e.id !== effectId));
     }, EFFECT_MS);
   };
+
+  // requestAnimationFrame movement loop: steers each fish toward its claimed
+  // drop (or idle wander), consuming a drop on contact. Position updates every
+  // frame in React state; only the existing 2s tick (above) writes to storage.
+  useEffect(() => {
+    if (!tank) return undefined;
+    let frameId;
+    let lastTime = null;
+    const loop = (time) => {
+      const dt = lastTime == null ? 0 : Math.min((time - lastTime) / 1000, 0.1);
+      lastTime = time;
+      const boundsWidth = tankRef.current
+        ? tankRef.current.getBoundingClientRect().width || 1
+        : 1;
+      const now = Date.now();
+      const events = [];
+      setTank((prev) => {
+        if (!prev) return prev;
+        const claimed = assignSeekTargets(prev);
+        const positioned = claimed.creatures.map((c) => {
+          if (!moveStatesRef.current.has(c.id)) {
+            moveStatesRef.current.set(c.id, createMovementState(c.x, c.y));
+          }
+          const found = c.seekTargetId ? findDrop(claimed, c.seekTargetId) : null;
+          const targetPoint = found ? { x: found.drop.x, y: found.drop.y } : null;
+          const stepped = stepMovement(
+            moveStatesRef.current.get(c.id),
+            dt,
+            now,
+            boundsWidth,
+            targetPoint,
+          );
+          moveStatesRef.current.set(c.id, stepped);
+          if (targetPoint && Math.hypot(stepped.x - targetPoint.x, stepped.y - targetPoint.y)
+            <= CONTACT_RADIUS) {
+            events.push({
+              creatureId: c.id,
+              dropId: c.seekTargetId,
+              dropType: found.type,
+              x: stepped.x,
+              y: stepped.y,
+            });
+          }
+          return { ...c, x: stepped.x, y: stepped.y };
+        });
+        let next = { ...claimed, creatures: positioned };
+        events.forEach((ev) => {
+          next = consumeDrop(next, ev.creatureId, ev.dropId);
+        });
+        return next;
+      });
+      events.forEach((ev) => {
+        pulse(ev.creatureId);
+        spawnEffect(ev.x, ev.y, ev.dropType === 'food' ? '🍤' : '💗');
+        if (soundRef.current) soundRef.current.play(ev.dropType === 'food' ? 'nom' : 'pop');
+      });
+      frameId = requestAnimationFrame(loop);
+    };
+    frameId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frameId);
+    // Deliberately depends on presence, not identity, same as the decay tick.
+  }, [tank !== null]);
 
   const dropAt = (x, y) => {
     spawnEffect(x, y, TOOLS_BY_KEY[tank.selectedTool].effect);
@@ -255,14 +322,18 @@ export default function Aquarium() {
           if (c.happiness < MET_THRESHOLD) classes.push(styles.sad);
           if (pulsingIds.has(c.id)) classes.push(styles.pulse);
           const bubble = wantBubble(c);
+          const moveState = moveStatesRef.current.get(c.id);
+          const wobble = moveState
+            ? wobbleOffset(moveState.heading, moveState.wobblePhase, Date.now())
+            : { x: 0, y: 0 };
           return (
             <div
               key={c.id}
               data-testid="creature"
               className={classes.join(' ')}
               style={{
-                left: `${c.x * 100}%`,
-                top: `${c.y * 100}%`,
+                left: `${(c.x + wobble.x) * 100}%`,
+                top: `${(c.y + wobble.y) * 100}%`,
                 fontSize: `${size}px`,
                 filter: `hue-rotate(${species.hueDeg}deg)`,
               }}
