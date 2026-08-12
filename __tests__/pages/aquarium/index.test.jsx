@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import Aquarium from '../../../pages/aquarium/index';
 
-// next/router is used via pwaMetaTags(basePath); provide a minimal mock.
 vi.mock('next/router', () => ({
   useRouter: () => ({ basePath: '' }),
 }));
@@ -13,11 +12,11 @@ describe('Aquarium page', () => {
     localStorage.clear();
   });
 
-  it('renders the three-tool palette', () => {
+  it('renders the two-tool palette', () => {
     render(<Aquarium />);
     expect(screen.getByRole('button', { name: /food/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sponge/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /toy/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sponge/i })).not.toBeInTheDocument();
   });
 
   it('renders starter creatures', () => {
@@ -27,9 +26,9 @@ describe('Aquarium page', () => {
 
   it('selecting a tool marks it pressed', () => {
     render(<Aquarium />);
-    const sponge = screen.getByRole('button', { name: /sponge/i });
-    fireEvent.click(sponge);
-    expect(sponge).toHaveAttribute('aria-pressed', 'true');
+    const toy = screen.getByRole('button', { name: /toy/i });
+    fireEvent.click(toy);
+    expect(toy).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('mute toggle flips its label', () => {
@@ -40,11 +39,25 @@ describe('Aquarium page', () => {
     expect(mute.getAttribute('aria-pressed')).not.toBe(before);
   });
 
-  it('tapping a creature with the food tool does not crash and keeps it rendered', () => {
+  it('tapping the tank with food selected drops food', () => {
     render(<Aquarium />);
-    fireEvent.click(screen.getByRole('button', { name: /food/i }));
+    const tank = screen.getByRole('presentation');
+    fireEvent.click(tank, { clientX: 50, clientY: 50 });
+    expect(screen.getAllByTestId('foodDrop').length).toBeGreaterThan(0);
+  });
+
+  it('tapping the tank with toy selected drops a toy', () => {
+    render(<Aquarium />);
+    fireEvent.click(screen.getByRole('button', { name: /toy/i }));
+    const tank = screen.getByRole('presentation');
+    fireEvent.click(tank, { clientX: 50, clientY: 50 });
+    expect(screen.getAllByTestId('toyDrop').length).toBeGreaterThan(0);
+  });
+
+  it('tapping a creature also drops at that point (no per-creature action left)', () => {
+    render(<Aquarium />);
     const first = screen.getAllByTestId('creature')[0];
-    fireEvent.click(first);
-    expect(screen.getAllByTestId('creature').length).toBeGreaterThan(0);
+    fireEvent.click(first, { clientX: 20, clientY: 20 });
+    expect(screen.getAllByTestId('foodDrop').length).toBeGreaterThan(0);
   });
 });

@@ -9,12 +9,9 @@ import { loadTank, saveTank } from '../../lib/aquarium/storage';
 import { clamp, generateId } from '../../lib/random';
 import {
   applyElapsed,
-  wanderCreatures,
-  feedTank,
-  playTank,
-  cleanTank,
-  feedCreature,
-  playCreature,
+  dropFood,
+  dropToy,
+  wipeDirtSpot,
   hatchEgg,
   MET_THRESHOLD,
   NEED_FLOOR,
@@ -23,25 +20,36 @@ import {
 import { createSound } from '../../lib/aquarium/sound';
 
 const TICK_MS = 2000;
-const WANDER_TICK_MS = 900;
 const DRAG_SAMPLE_MS = 120;
-const LONG_PRESS_MS = 500;
 const PULSE_MS = 650;
 const EFFECT_MS = 900;
-
-// Maps a need value (floor..max) to a continuous red-to-green hue, so a
-// creature's mood is visible at a glance without any numbers.
-const moodHue = (value) =>
-  Math.round(clamp((value - NEED_FLOOR) / (NEED_MAX - NEED_FLOOR), 0, 1) * 120);
 // Touch jitter on a stationary tap can still fire a pointermove; require real
 // movement before treating a press as a drag, so a tap never double-acts.
 const MIN_DRAG_PX = 12;
+
 const TOOLS = [
   { key: 'food', label: 'Food', emoji: '🍤', effect: '🍤' },
-  { key: 'sponge', label: 'Sponge', emoji: '🧽', effect: '✨' },
   { key: 'toy', label: 'Toy', emoji: '🎾', effect: '💗' },
 ];
 const TOOLS_BY_KEY = Object.fromEntries(TOOLS.map((t) => [t.key, t]));
+
+// Derived from MET_THRESHOLD so "the bubble is showing" and "the fish will
+// actually swim to a drop of that kind" (assignSeekTargets' eligibility test)
+// are the same condition — a bubble that appears above the seek cutoff would
+// promise the toddler care the fish then refuses to collect.
+const WANT_BUBBLE_THRESHOLD = (MET_THRESHOLD - NEED_FLOOR) / (NEED_MAX - NEED_FLOOR);
+const needUrgency = (value) => {
+  const metFraction = clamp((value - NEED_FLOOR) / (NEED_MAX - NEED_FLOOR), 0, 1);
+  if (metFraction >= WANT_BUBBLE_THRESHOLD) return 0;
+  return 1 - metFraction / WANT_BUBBLE_THRESHOLD;
+};
+const wantBubble = (creature) => {
+  const hungerUrgency = needUrgency(creature.hunger);
+  const happinessUrgency = needUrgency(creature.happiness);
+  const urgency = Math.max(hungerUrgency, happinessUrgency);
+  if (urgency <= 0) return null;
+  return { emoji: hungerUrgency >= happinessUrgency ? '🍤' : '🎾', visible: urgency };
+};
 
 // Click position within an element as 0..1 fractions; guards a zero-size rect.
 const rectFraction = (el, clientX, clientY) => {
@@ -61,8 +69,6 @@ export default function Aquarium() {
   const soundRef = useRef(null);
   const tankRef = useRef(null);
   const dragRef = useRef({ active: false, lastSample: 0 });
-  const pressTimerRef = useRef(null);
-  const pressFiredRef = useRef(false);
 
   // Mount: load, catch up offline decay, wire sound.
   useEffect(() => {
@@ -90,16 +96,6 @@ export default function Aquarium() {
     // stable across renders.
   }, [tank !== null]);
 
-  // Faster, uncoupled wander tick so the tank feels alive between decay ticks.
-  // Depends on presence, not identity, same as the decay tick above.
-  useEffect(() => {
-    if (!tank) return undefined;
-    const id = setInterval(() => {
-      setTank((prev) => (prev ? wanderCreatures(prev) : prev));
-    }, WANDER_TICK_MS);
-    return () => clearInterval(id);
-  }, [tank !== null]);
-
   const commit = useCallback((updater, cue) => {
     setTank((prev) => {
       if (!prev) return prev;
@@ -111,8 +107,7 @@ export default function Aquarium() {
 
   const selectTool = (key) => commit((prev) => ({ ...prev, selectedTool: key }), null);
 
-  // Brief bounce/flash on the exact creature a directed action touched —
-  // visible confirmation even when its needs were already maxed out.
+  // Brief bounce/flash on the exact creature/spot a directed action touched.
   const pulse = (id) => {
     setPulsingIds((prev) => new Set(prev).add(id));
     setTimeout(() => {
@@ -124,8 +119,8 @@ export default function Aquarium() {
     }, PULSE_MS);
   };
 
-  // Ripple at the tap/drag point for tank-wide actions, since which
-  // creature(s) actually got fed/played isn't known at this layer.
+  // Ripple at the tap/drag point, since which creature will eventually reach
+  // a drop isn't known at drop time.
   const spawnEffect = (x, y, emoji) => {
     const effectId = generateId();
     setEffects((prev) => [...prev, { id: effectId, x, y, emoji }]);
@@ -134,43 +129,40 @@ export default function Aquarium() {
     }, EFFECT_MS);
   };
 
-  const actOnTank = (x, y) => {
+  const dropAt = (x, y) => {
     spawnEffect(x, y, TOOLS_BY_KEY[tank.selectedTool].effect);
-    if (tank.selectedTool === 'food') commit((prev) => feedTank(prev, x, y), 'nom');
-    else if (tank.selectedTool === 'sponge') commit((prev) => cleanTank(prev), 'sparkle');
-    else commit((prev) => playTank(prev, x, y), 'pop');
+    if (tank.selectedTool === 'food') commit((prev) => dropFood(prev, x, y), 'pop');
+    else commit((prev) => dropToy(prev, x, y), 'pop');
   };
 
-  const actOnCreature = (creature) => {
-    const { id, x, y } = creature;
+  const wipeSpot = (id, x, y) => {
     pulse(id);
-    spawnEffect(x, y, TOOLS_BY_KEY[tank.selectedTool].effect);
-    if (tank.selectedTool === 'food') commit((prev) => feedCreature(prev, id), 'nom');
-    else if (tank.selectedTool === 'sponge') commit((prev) => cleanTank(prev), 'sparkle');
-    else commit((prev) => playCreature(prev, id), 'pop');
+    spawnEffect(x, y, '✨');
+    commit((prev) => wipeDirtSpot(prev, id), 'sparkle');
   };
 
+  // Any tap inside the tank drops the selected tool's item at that point —
+  // including a tap that lands on a fish, per the "guaranteed feed this one"
+  // interaction. Dirt spots stop this from bubbling up (see their own
+  // onClick) so tapping a spot always wipes it instead of dropping.
   const handleTankClick = (e) => {
-    if (!tank || e.target !== tankRef.current) return;
-    const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
-    actOnTank(x, y);
-  };
-
-  const handleCreatureClick = (e, creature) => {
-    e.stopPropagation();
     if (!tank) return;
-    // A long-press already acted on this press; skip the trailing click it produces.
-    if (pressFiredRef.current) {
-      pressFiredRef.current = false;
-      return;
-    }
-    actOnCreature(creature);
+    const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+    dropAt(x, y);
   };
 
-  // Drag with food/sponge/toy selected repeatedly acts on the tank along the
-  // pointer path, sampled to avoid flooding state updates.
+  const handleDirtSpotClick = (e, spot) => {
+    e.stopPropagation();
+    wipeSpot(spot.id, spot.x, spot.y);
+  };
+
+  // Drag repeatedly acts along the pointer path, sampled to avoid flooding
+  // state updates; a real browser gets drag-wipe-across-spots via
+  // elementFromPoint since jsdom doesn't implement it meaningfully.
+  // Deliberately unguarded on e.target: fish are large plain divs with no press
+  // handler of their own, so a drag that starts on top of one must still count
+  // as a drag — matching handleTankClick, which already accepts taps anywhere.
   const handleTankPointerDown = (e) => {
-    if (e.target !== tankRef.current) return;
     dragRef.current = {
       active: true,
       dragging: false,
@@ -192,29 +184,16 @@ export default function Aquarium() {
     if (now - drag.lastSample < DRAG_SAMPLE_MS) return;
     drag.lastSample = now;
     const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
-    actOnTank(x, y);
+    const hit = typeof document.elementFromPoint === 'function'
+      ? document.elementFromPoint(e.clientX, e.clientY)
+      : null;
+    const spotId = hit && hit.dataset ? hit.dataset.spotId : undefined;
+    if (spotId) wipeSpot(spotId, x, y);
+    else dropAt(x, y);
   };
 
   const endTankDrag = () => {
     dragRef.current.active = false;
-  };
-
-  // Long-press on a creature: hold to feed/play/pet without a directed tap.
-  const handleCreaturePointerDown = (e, creature) => {
-    e.stopPropagation();
-    pressFiredRef.current = false;
-    pressTimerRef.current = setTimeout(() => {
-      pressFiredRef.current = true;
-      actOnCreature(creature);
-    }, LONG_PRESS_MS);
-  };
-
-  const cancelCreaturePress = (e) => {
-    e.stopPropagation();
-    if (pressTimerRef.current) {
-      clearTimeout(pressTimerRef.current);
-      pressTimerRef.current = null;
-    }
   };
 
   const handleHatch = (e) => {
@@ -237,7 +216,6 @@ export default function Aquarium() {
     );
   }
 
-  // Continuous (not threshold-gated) murkiness, so cleaning is visible right away.
   const dirtiness = clamp((NEED_MAX - tank.tankCleanliness) / (NEED_MAX - NEED_FLOOR), 0, 1);
   const tankFilter = `sepia(${(0.55 * dirtiness).toFixed(2)}) `
     + `saturate(${(1 + 0.5 * dirtiness).toFixed(2)}) `
@@ -276,11 +254,9 @@ export default function Aquarium() {
           if (c.hunger < MET_THRESHOLD) classes.push(styles.hungry);
           if (c.happiness < MET_THRESHOLD) classes.push(styles.sad);
           if (pulsingIds.has(c.id)) classes.push(styles.pulse);
-          // Continuous red-to-green mood dot: shows state instantly, not just past a threshold.
-          const hue = moodHue((c.hunger + c.happiness) / 2);
+          const bubble = wantBubble(c);
           return (
-            <button
-              type="button"
+            <div
               key={c.id}
               data-testid="creature"
               className={classes.join(' ')}
@@ -291,21 +267,64 @@ export default function Aquarium() {
                 filter: `hue-rotate(${species.hueDeg}deg)`,
               }}
               aria-label={species.name}
-              onClick={(e) => handleCreatureClick(e, c)}
-              onPointerDown={(e) => handleCreaturePointerDown(e, c)}
-              onPointerUp={cancelCreaturePress}
-              onPointerLeave={cancelCreaturePress}
-              onPointerCancel={cancelCreaturePress}
             >
               {species.emoji[c.stage]}
-              <span
-                className={styles.moodDot}
-                style={{ backgroundColor: `hsl(${hue}, 85%, 50%)` }}
-                aria-hidden="true"
-              />
-            </button>
+              {bubble && (
+                <span
+                  className={styles.wantBubble}
+                  style={{
+                    opacity: bubble.visible,
+                    // Keeps the class's own centering translate — an inline
+                    // transform replaces it outright rather than composing.
+                    transform: `translateX(-50%) scale(${0.6 + 0.4 * bubble.visible})`,
+                  }}
+                  aria-hidden="true"
+                >
+                  {bubble.emoji}
+                </span>
+              )}
+            </div>
           );
         })}
+
+        {tank.foodDrops.map((d) => (
+          <span
+            key={d.id}
+            data-testid="foodDrop"
+            className={styles.foodDrop}
+            style={{ left: `${d.x * 100}%`, top: `${d.y * 100}%` }}
+            aria-hidden="true"
+          >
+            🍤
+          </span>
+        ))}
+
+        {tank.toyDrops.map((d) => (
+          <span
+            key={d.id}
+            data-testid="toyDrop"
+            className={styles.toyDrop}
+            style={{ left: `${d.x * 100}%`, top: `${d.y * 100}%` }}
+            aria-hidden="true"
+          >
+            🎾
+          </span>
+        ))}
+
+        {tank.dirtSpots.map((spot) => (
+          <button
+            type="button"
+            key={spot.id}
+            data-testid="dirtSpot"
+            data-spot-id={spot.id}
+            className={`${styles.dirtSpot} ${pulsingIds.has(spot.id) ? styles.pulse : ''}`}
+            style={{ left: `${spot.x * 100}%`, top: `${spot.y * 100}%` }}
+            aria-label="Wipe dirt spot"
+            onClick={(e) => handleDirtSpotClick(e, spot)}
+          >
+            💩
+          </button>
+        ))}
 
         {effects.map((e) => (
           <span
