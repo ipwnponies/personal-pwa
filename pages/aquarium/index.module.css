@@ -1,0 +1,139 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: relative;
+  background: #08324a;
+}
+
+.muteToggle {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 2;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.tank {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: linear-gradient(180deg, #0a4a6e 0%, #062f45 100%);
+  transition: filter 0.6s ease;
+}
+
+.creature {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: none;
+  background: none;
+  padding: 0.5rem;
+  line-height: 1;
+}
+
+.hungry {
+  opacity: 0.6;
+}
+
+.sad {
+  filter: grayscale(0.6);
+  animation-duration: 10s;
+}
+
+.pulse {
+  animation: pulse 0.65s ease-in-out;
+}
+
+.wantBubble {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 20px;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.effect {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 46px;
+  pointer-events: none;
+  animation: effectPop 0.9s ease-out forwards;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.8));
+}
+
+.egg {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  border: none;
+  background: none;
+  font-size: 44px;
+  cursor: pointer;
+  animation: wobble 1.2s ease-in-out infinite;
+}
+
+.foodDrop,
+.toyDrop {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 28px;
+  pointer-events: none;
+}
+
+.dirtSpot {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: none;
+  background: none;
+  font-size: 30px;
+  cursor: pointer;
+  filter: opacity(0.75);
+}
+
+.palette {
+  display: flex;
+  justify-content: space-around;
+  padding: 0.75rem;
+  background: #04202f;
+}
+
+.tool {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 1rem;
+  border: 3px solid transparent;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 2rem;
+  cursor: pointer;
+}
+
+.selected {
+  border-color: #ffd54a;
+  background: rgba(255, 213, 74, 0.25);
+}
+
+@keyframes pulse {
+  0% { transform: translate(-50%, -50%) scale(1); filter: brightness(1); }
+  40% { transform: translate(-50%, -50%) scale(1.35); filter: brightness(1.5); }
+  100% { transform: translate(-50%, -50%) scale(1); filter: brightness(1); }
+}
+
+@keyframes effectPop {
+  0% { transform: translate(-50%, -50%) scale(0.3); opacity: 1; }
+  30% { transform: translate(-50%, -60%) scale(1.5); opacity: 1; }
+  100% { transform: translate(-50%, -110%) scale(1.2); opacity: 0; }
+}
+
+@keyframes wobble {
+  0%, 100% { transform: translateX(-50%) rotate(-8deg); }
+  50% { transform: translateX(-50%) rotate(8deg); }
+}

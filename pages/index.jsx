@@ -37,6 +37,9 @@ export default function Home({ allPostsData }) {
           <Link href="/doodle/">Doodle App</Link>
         </p>
         <p>
+          <Link href="/aquarium/">Aquarium App</Link>
+        </p>
+        <p>
           <Link href="/settings">Settings</Link>
         </p>
       </section>
