@@ -92,6 +92,17 @@ describe('useDoodleObjects', () => {
     expect(updated.y).toBe(shape.y); // unaffected
   });
 
+  it('transformShape partially updates, leaving an omitted field unchanged', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(0, 0); });
+    act(() => result.current.transformShape(shape.id, { size: 50, rotation: 120 }));
+    act(() => result.current.transformShape(shape.id, { size: 65 })); // rotation omitted
+    const updated = result.current.objects.find((o) => o.id === shape.id);
+    expect(updated.size).toBe(65);
+    expect(updated.rotation).toBe(120); // held from before, not clobbered to undefined
+  });
+
   it('transformShape no-ops for an unknown id', () => {
     const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
     act(() => { result.current.spawnShape(0, 0); });

@@ -10,6 +10,7 @@ import styles from './doodle.module.css';
 
 const MOVE_THRESHOLD = 8; // px of movement before a press becomes a drag/draw
 const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_RADIUS = MOVE_THRESHOLD * 3; // proximity a second tap must land within to complete a double-tap
 const MUTE_KEY = 'doodle-muted';
 const MAX_DT = 0.05; // clamp frame delta so a backgrounded tab doesn't jump
 const MAX_POINTERS = 10; // defensive ceiling, not a gameplay limit
@@ -31,8 +32,8 @@ export default function DoodleCanvas({ rng, sound }) {
   const pointersRef = useRef(new Map()); // pointerId -> PointerState
   const pinchesRef = useRef(new Map()); // shapeId -> PinchState
   const lastTapRef = useRef(new Map()); // shapeId -> { x, y, time }
-  const pulseTimer = useRef(null);
-  const [pulsingId, setPulsingId] = useState(null);
+  const pulseTimers = useRef(new Map()); // shapeId -> timeoutId
+  const [pulsingIds, setPulsingIds] = useState(new Set());
   const [muted, setMuted] = useState(false);
 
   // Load + persist the mute preference (separate from canvas content).
@@ -73,9 +74,10 @@ export default function DoodleCanvas({ rng, sound }) {
     return () => cancelAnimationFrame(raf);
   }, [advance]);
 
-  // Clear a pending pulse timeout on unmount (consistent with the rAF cleanup).
+  // Clear every pending pulse timeout on unmount (consistent with the rAF cleanup).
   useEffect(() => () => {
-    if (pulseTimer.current) clearTimeout(pulseTimer.current);
+    pulseTimers.current.forEach((timerId) => clearTimeout(timerId));
+    pulseTimers.current.clear();
     pointersRef.current.clear();
     pinchesRef.current.clear();
   }, []);
@@ -95,22 +97,56 @@ export default function DoodleCanvas({ rng, sound }) {
   const shapeIsClaimed = (shapeId) => pinchesRef.current.has(shapeId)
     || [...pointersRef.current.values()].some((entry) => entry.shapeId === shapeId && entry.mode === 'drag');
 
+  // Tears down a pinch when one of its two member pointers lifts/cancels:
+  // removes the shared pinchesRef entry and hands the surviving pointer off
+  // to a plain drag re-armed from its current live position, so it continues
+  // smoothly instead of jumping or restarting the gesture.
+  const endPinchMember = (p, pointerId) => {
+    const pinch = pinchesRef.current.get(p.shapeId);
+    pinchesRef.current.delete(p.shapeId);
+    if (!pinch) return;
+    const otherId = pinch.pointerIds.find((id) => id !== pointerId);
+    const other = pointersRef.current.get(otherId);
+    if (other) {
+      other.mode = 'drag';
+      other.moved = true;
+      other.startX = other.x;
+      other.startY = other.y;
+    }
+  };
+
+  // Each shape's pulse expires independently, so a second concurrent tap (a
+  // different finger, on a different shape) never cancels another shape's
+  // in-flight pulse animation.
   const triggerPulse = (id) => {
-    setPulsingId(id);
-    if (pulseTimer.current) clearTimeout(pulseTimer.current);
-    pulseTimer.current = setTimeout(() => setPulsingId(null), DOUBLE_TAP_MS);
+    setPulsingIds((prev) => new Set(prev).add(id));
+    const existingTimer = pulseTimers.current.get(id);
+    if (existingTimer) clearTimeout(existingTimer);
+    pulseTimers.current.set(id, setTimeout(() => {
+      pulseTimers.current.delete(id);
+      setPulsingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, DOUBLE_TAP_MS));
   };
 
   const handleShapeTap = (id, x, y) => {
     const now = Date.now();
     const last = lastTapRef.current.get(id);
-    if (last && now - last.time < DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) < MOVE_THRESHOLD) {
+    if (last && now - last.time < DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) < DOUBLE_TAP_RADIUS) {
       lastTapRef.current.delete(id);
       popShape(id);
       soundRef.current.playPop();
       return;
     }
     lastTapRef.current.set(id, { x, y, time: now });
+    // Prune other shapes' stale tap entries — they're too old to complete a
+    // double-tap anyway, so there's no reason to keep them around forever.
+    lastTapRef.current.forEach((entry, shapeId) => {
+      if (shapeId !== id && now - entry.time >= DOUBLE_TAP_MS) lastTapRef.current.delete(shapeId);
+    });
     triggerPulse(id);
     const shape = objectsRef.current.find((o) => o.id === id);
     if (shape) soundRef.current.playNote(shape.note);
@@ -141,12 +177,16 @@ export default function DoodleCanvas({ rng, sound }) {
       if (partnerEntry) {
         const [partnerId, partner] = partnerEntry;
         const shape = objectsRef.current.find((o) => o.id === shapeId);
-        const startDist = Math.max(Math.hypot(pt.x - partner.startX, pt.y - partner.startY), 1);
-        const startAngle = Math.atan2(pt.y - partner.startY, pt.x - partner.startX) * (180 / Math.PI);
+        if (!shape) return;
+        // Use the partner's live position, not its touchdown position — it may
+        // have drifted (up to MOVE_THRESHOLD) before the second finger landed.
+        const startDist = Math.max(Math.hypot(pt.x - partner.x, pt.y - partner.y), 1);
+        const startAngle = Math.atan2(pt.y - partner.y, pt.x - partner.x) * (180 / Math.PI);
         pinchesRef.current.set(shapeId, {
           pointerIds: [partnerId, e.pointerId], startDist, startAngle, startSize: shape.size, startRotation: shape.rotation,
         });
         partner.mode = 'pinch-member';
+        partner.moved = true;
         pointersRef.current.set(e.pointerId, {
           pointerId: e.pointerId, mode: 'pinch-member', shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now,
         });
@@ -177,7 +217,11 @@ export default function DoodleCanvas({ rng, sound }) {
       if (!a || !b) return;
       const liveDist = Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1);
       const liveAngle = Math.atan2(b.y - a.y, b.x - a.x) * (180 / Math.PI);
-      const size = clamp(pinch.startSize * (liveDist / pinch.startDist), MIN_SIZE, MAX_SIZE);
+      // MIN_SIZE is the spawn floor, not a floor on every shape — popped
+      // shards routinely start below it. Never snap a shape up to MIN_SIZE on
+      // the first pinch move; let it shrink further from wherever it already was.
+      const minSize = Math.min(MIN_SIZE, pinch.startSize);
+      const size = clamp(pinch.startSize * (liveDist / pinch.startDist), minSize, MAX_SIZE);
       const rotation = pinch.startRotation + (liveAngle - pinch.startAngle);
       transformShape(p.shapeId, { size, rotation });
       return;
@@ -211,18 +255,7 @@ export default function DoodleCanvas({ rng, sound }) {
     if (p.mode === 'inert') return;
 
     if (p.mode === 'pinch-member') {
-      const pinch = pinchesRef.current.get(p.shapeId);
-      pinchesRef.current.delete(p.shapeId);
-      if (pinch) {
-        const otherId = pinch.pointerIds.find((id) => id !== e.pointerId);
-        const other = pointersRef.current.get(otherId);
-        if (other) {
-          other.mode = 'drag';
-          other.moved = true;
-          other.startX = other.x;
-          other.startY = other.y;
-        }
-      }
+      endPinchMember(p, e.pointerId);
       return;
     }
 
@@ -244,20 +277,7 @@ export default function DoodleCanvas({ rng, sound }) {
     const p = pointersRef.current.get(e.pointerId);
     if (!p) return;
     pointersRef.current.delete(e.pointerId);
-    if (p.mode === 'pinch-member') {
-      const pinch = pinchesRef.current.get(p.shapeId);
-      pinchesRef.current.delete(p.shapeId);
-      if (pinch) {
-        const otherId = pinch.pointerIds.find((id) => id !== e.pointerId);
-        const other = pointersRef.current.get(otherId);
-        if (other) {
-          other.mode = 'drag';
-          other.moved = true;
-          other.startX = other.x;
-          other.startY = other.y;
-        }
-      }
-    }
+    if (p.mode === 'pinch-member') endPinchMember(p, e.pointerId);
   };
 
   return (
@@ -272,7 +292,7 @@ export default function DoodleCanvas({ rng, sound }) {
         onPointerCancel={onPointerCancel}
       >
         {objects.map((o) => (o.kind === 'shape'
-          ? <Shape key={o.id} shape={o} pulsing={o.id === pulsingId} />
+          ? <Shape key={o.id} shape={o} pulsing={pulsingIds.has(o.id)} />
           : <Stroke key={o.id} stroke={o} />))}
       </svg>
       <div className={styles.toolbar}>

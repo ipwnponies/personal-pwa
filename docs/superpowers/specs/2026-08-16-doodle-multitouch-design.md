@@ -64,9 +64,9 @@ Chosen approach: hand-rolled pointer-map state machine (below).
 Replaces the single `pointerRef`:
 
 - `pointersRef` — `Map<pointerId, PointerState>` where
-  `PointerState = { mode: null | 'drag' | 'draw' | 'pinch-member', shapeId,
-  startX, startY, moved, strokeId, downTime }`. One entry per currently-down
-  finger/pointer.
+  `PointerState = { mode: null | 'drag' | 'draw' | 'pinch-member' | 'inert',
+  shapeId, startX, startY, moved, strokeId, downTime }`. One entry per
+  currently-down finger/pointer.
 - `pinchesRef` — `Map<shapeId, PinchState>` where
   `PinchState = { pointerIds: [a, b], startDist, startAngle, startSize,
   startRotation }`. A shape can have at most one active pinch, since a pinch
@@ -169,9 +169,11 @@ way a drag already writes new `x`/`y`.
   otherwise affected.
 - A third finger touches the *same* shape while it's already mid-pinch: no
   pinch partner is found (both existing members are `mode: 'pinch-member'`,
-  not `null`), so it becomes an ordinary solo slot on that shape id. Since
-  the shape is already held still by the active pinch, this extra finger is
-  inert until it lifts — no crash, no third-way gesture.
+  not `null`), but `onPointerDown`'s `shapeIsClaimed(shapeId)` guard catches
+  it first — a pinch on the shape makes it claimed — and marks the new
+  pointer `mode: 'inert'` immediately. `'inert'` is a no-op mode checked at
+  the top of `onPointerMove`/`onPointerUp`, so this extra finger never
+  reaches the drag/tap logic at all — no crash, no third-way gesture.
 - `pointercancel` (palm rejection, OS gesture reclaim) follows the same
   teardown path as `pointerup` for both plain and pinch-member entries.
 - Component unmount: `pointersRef`/`pinchesRef` are cleared alongside the
