@@ -10,6 +10,7 @@ const MOVE_THRESHOLD = 8; // px of movement before a press becomes a drag/draw
 const DOUBLE_TAP_MS = 300;
 const MUTE_KEY = 'doodle-muted';
 const MAX_DT = 0.05; // clamp frame delta so a backgrounded tab doesn't jump
+const MAX_POINTERS = 10; // defensive ceiling, not a gameplay limit
 
 export default function DoodleCanvas({ rng, sound }) {
   const {
@@ -24,11 +25,8 @@ export default function DoodleCanvas({ rng, sound }) {
   const objectsRef = useRef(objects);
   objectsRef.current = objects;
 
-  // Single-slot: only one gesture tracked at a time (matches the spec's
-  // single-pointer scope). A second finger touching down while one is
-  // already active is ignored below rather than clobbering the first.
-  const pointerRef = useRef(null); // { pointerId, mode, id, startX, startY, moved, strokeId }
-  const lastTapRef = useRef(null); // { id, time }
+  const pointersRef = useRef(new Map()); // pointerId -> PointerState
+  const lastTapRef = useRef(new Map()); // shapeId -> { x, y, time }
   const pulseTimer = useRef(null);
   const [pulsingId, setPulsingId] = useState(null);
   const [muted, setMuted] = useState(false);
@@ -59,8 +57,11 @@ export default function DoodleCanvas({ rng, sound }) {
       last = now;
       const rect = svgRef.current?.getBoundingClientRect();
       if (rect && rect.width && rect.height) {
-        const grabbed = pointerRef.current?.mode === 'drag' ? pointerRef.current.id : null;
-        advance(dt, { width: rect.width, height: rect.height }, grabbed);
+        const grabbedIds = new Set();
+        pointersRef.current.forEach((entry) => {
+          if (entry.mode === 'drag') grabbedIds.add(entry.shapeId);
+        });
+        advance(dt, { width: rect.width, height: rect.height }, grabbedIds);
       }
       raf = requestAnimationFrame(tick);
     };
@@ -71,6 +72,7 @@ export default function DoodleCanvas({ rng, sound }) {
   // Clear a pending pulse timeout on unmount (consistent with the rAF cleanup).
   useEffect(() => () => {
     if (pulseTimer.current) clearTimeout(pulseTimer.current);
+    pointersRef.current.clear();
   }, []);
 
   const toLocal = (e) => {
@@ -88,16 +90,16 @@ export default function DoodleCanvas({ rng, sound }) {
     pulseTimer.current = setTimeout(() => setPulsingId(null), DOUBLE_TAP_MS);
   };
 
-  const handleShapeTap = (id) => {
+  const handleShapeTap = (id, x, y) => {
     const now = Date.now();
-    const last = lastTapRef.current;
-    if (last && last.id === id && now - last.time < DOUBLE_TAP_MS) {
-      lastTapRef.current = null;
+    const last = lastTapRef.current.get(id);
+    if (last && now - last.time < DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) < MOVE_THRESHOLD) {
+      lastTapRef.current.delete(id);
       popShape(id);
       soundRef.current.playPop();
       return;
     }
-    lastTapRef.current = { id, time: now };
+    lastTapRef.current.set(id, { x, y, time: now });
     triggerPulse(id);
     const shape = objectsRef.current.find((o) => o.id === id);
     if (shape) soundRef.current.playNote(shape.note);
@@ -108,28 +110,33 @@ export default function DoodleCanvas({ rng, sound }) {
   // leaves that element — so a drag that wanders off a shape still tracks. The
   // stage is full-viewport, so no explicit setPointerCapture is needed.
   const onPointerDown = (e) => {
-    if (pointerRef.current) return; // a gesture is already active — ignore extra fingers
+    if (pointersRef.current.size >= MAX_POINTERS) return;
     const pt = toLocal(e);
-    pointerRef.current = {
+    pointersRef.current.set(e.pointerId, {
       pointerId: e.pointerId,
       mode: null,
-      id: shapeIdFromTarget(e.target),
+      shapeId: shapeIdFromTarget(e.target),
       startX: pt.x,
       startY: pt.y,
+      x: pt.x,
+      y: pt.y,
       moved: false,
       strokeId: null,
-    };
+      downTime: Date.now(),
+    });
   };
 
   const onPointerMove = (e) => {
-    const p = pointerRef.current;
-    if (!p || e.pointerId !== p.pointerId) return;
+    const p = pointersRef.current.get(e.pointerId);
+    if (!p) return;
     const pt = toLocal(e);
+    p.x = pt.x;
+    p.y = pt.y;
     if (!p.moved) {
-      const dist = Math.hypot(pt.x - p.startX, pt.y - p.startY);
-      if (dist < MOVE_THRESHOLD) return;
+      const distMoved = Math.hypot(pt.x - p.startX, pt.y - p.startY);
+      if (distMoved < MOVE_THRESHOLD) return;
       p.moved = true;
-      if (p.id) {
+      if (p.shapeId) {
         p.mode = 'drag';
       } else {
         p.mode = 'draw';
@@ -137,17 +144,17 @@ export default function DoodleCanvas({ rng, sound }) {
         soundRef.current.playStroke();
       }
     }
-    if (p.mode === 'drag') moveShape(p.id, pt.x, pt.y);
+    if (p.mode === 'drag') moveShape(p.shapeId, pt.x, pt.y);
     else if (p.mode === 'draw') appendStrokePoint(p.strokeId, pt.x, pt.y);
   };
 
   const onPointerUp = (e) => {
-    const p = pointerRef.current;
-    if (!p || e.pointerId !== p.pointerId) return;
-    pointerRef.current = null;
+    const p = pointersRef.current.get(e.pointerId);
+    if (!p) return;
+    pointersRef.current.delete(e.pointerId);
     if (p.moved) return; // drag/draw already handled on move
-    if (p.id) {
-      handleShapeTap(p.id);
+    if (p.shapeId) {
+      handleShapeTap(p.shapeId, p.startX, p.startY);
     } else {
       const pt = toLocal(e);
       const shape = spawnShape(pt.x, pt.y);
@@ -157,13 +164,10 @@ export default function DoodleCanvas({ rng, sound }) {
 
   // The browser sends pointercancel instead of pointerup for palm rejection,
   // edge-swipe gestures, or the OS reclaiming the touch — all plausible when a
-  // toddler's whole hand lands on the screen. Without this, pointerRef would
-  // stay populated forever and onPointerDown's single-gesture guard would
-  // permanently lock out every future touch.
+  // toddler's whole hand lands on the screen. A cancelled pointer's entry is
+  // simply dropped, freeing that slot for future touches.
   const onPointerCancel = (e) => {
-    const p = pointerRef.current;
-    if (!p || e.pointerId !== p.pointerId) return;
-    pointerRef.current = null;
+    pointersRef.current.delete(e.pointerId);
   };
 
   return (

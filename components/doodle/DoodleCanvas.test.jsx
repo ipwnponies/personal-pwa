@@ -151,9 +151,9 @@ describe('DoodleCanvas', () => {
     rectSpy.mockRestore();
   });
 
-  it('ignores a second finger while the first gesture is still active', () => {
-    // Regression: pointerRef was a single shared slot, so a second pointerdown
-    // mid-drag/mid-draw used to clobber the first finger's tracked state.
+  it('a second finger acts independently while the first gesture is still active', () => {
+    // Multi-touch: a second finger is no longer locked out by an in-progress
+    // first gesture — each pointerId tracks its own independent state.
     const sound = mockSound();
     const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);
     const svg = stage(container);
@@ -165,17 +165,88 @@ describe('DoodleCanvas', () => {
     fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 1 });
     fireEvent.pointerMove(svg, { clientX: 150, clientY: 100, pointerId: 1 });
 
-    // Finger 2 touches empty space mid-drag — must not spawn a shape or hijack tracking.
+    // Finger 2 taps empty space mid-drag — now spawns its own shape independently.
     fireEvent.pointerDown(svg, { clientX: 400, clientY: 400, pointerId: 2 });
     fireEvent.pointerUp(svg, { clientX: 400, clientY: 400, pointerId: 2 });
-    expect(shapeGroups(container)).toHaveLength(1); // no shape spawned by finger 2
+    expect(shapeGroups(container)).toHaveLength(2); // finger 1's shape + finger 2's new spawn
 
-    // Finger 1 continues and completes its drag normally.
+    // Finger 1 continues and completes its drag normally, unaffected by finger 2.
     fireEvent.pointerMove(svg, { clientX: 170, clientY: 130, pointerId: 1 });
     fireEvent.pointerUp(svg, { clientX: 170, clientY: 130, pointerId: 1 });
     expect(strokes(container)).toHaveLength(0); // finger 1 was dragging, never drew
-    const transform = container.querySelector('svg > g[data-id]').getAttribute('transform');
+    const transform = container.querySelector(`[data-id="${g.getAttribute('data-id')}"]`).getAttribute('transform');
     expect(transform).toMatch(/^translate\(170 130\)/);
+  });
+
+  it('two fingers on empty space draw two independent strokes concurrently', () => {
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+
+    fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 2 });
+    fireEvent.pointerMove(svg, { clientX: 60, clientY: 60, pointerId: 1 });
+    fireEvent.pointerMove(svg, { clientX: 540, clientY: 540, pointerId: 2 });
+    fireEvent.pointerMove(svg, { clientX: 80, clientY: 90, pointerId: 1 });
+    fireEvent.pointerMove(svg, { clientX: 560, clientY: 520, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 80, clientY: 90, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 560, clientY: 520, pointerId: 2 });
+
+    expect(strokes(container)).toHaveLength(2);
+    expect(shapeGroups(container)).toHaveLength(0);
+  });
+
+  it('double-tap requires the second tap near the first — far-apart taps do not pop', () => {
+    const sound = mockSound();
+    // rng high so the spawned shape is large enough that (100,100) and (120,100)
+    // both land on it, isolating "far apart" from "missed the shape".
+    const { container } = render(<DoodleCanvas rng={seq([0.99])} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const firstId = g.getAttribute('data-id');
+
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    // Second tap lands on the same shape but 20px away — beyond MOVE_THRESHOLD (8px).
+    fireEvent.pointerDown(g, { clientX: 120, clientY: 100, pointerId: 3 });
+    fireEvent.pointerUp(g, { clientX: 120, clientY: 100, pointerId: 3 });
+
+    expect(container.querySelector(`[data-id="${firstId}"]`)).not.toBeNull(); // not popped
+    expect(sound.playPop).not.toHaveBeenCalled();
+  });
+
+  it('double-tap pops when the second tap lands near the first, from a different pointerId', () => {
+    const sound = mockSound();
+    const { container } = render(<DoodleCanvas rng={seq([0.99])} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const firstId = g.getAttribute('data-id');
+
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    // Second tap 3px away — within MOVE_THRESHOLD — and a different pointerId.
+    fireEvent.pointerDown(g, { clientX: 103, clientY: 100, pointerId: 3 });
+    fireEvent.pointerUp(g, { clientX: 103, clientY: 100, pointerId: 3 });
+
+    expect(container.querySelector(`[data-id="${firstId}"]`)).toBeNull(); // popped
+    expect(sound.playPop).toHaveBeenCalledTimes(1);
+  });
+
+  it('caps concurrent pointers and ignores extras beyond the limit', () => {
+    const sound = mockSound();
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={sound} />);
+    const svg = stage(container);
+    for (let id = 1; id <= 10; id += 1) {
+      fireEvent.pointerDown(svg, { clientX: 10 * id, clientY: 10, pointerId: id });
+    }
+    fireEvent.pointerDown(svg, { clientX: 999, clientY: 999, pointerId: 11 }); // 11th dropped, cap already reached
+    for (let id = 1; id <= 11; id += 1) {
+      fireEvent.pointerUp(svg, { clientX: 10 * id, clientY: 10, pointerId: id });
+    }
+    expect(shapeGroups(container)).toHaveLength(10); // pointer 11's up finds no tracked entry, no-ops
   });
 
   it('clears the tracked gesture on pointercancel, not just pointerup', () => {
