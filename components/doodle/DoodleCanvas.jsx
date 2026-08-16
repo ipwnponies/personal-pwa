@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useDoodleObjects } from '../../lib/useDoodleObjects';
 import { createDoodleSound } from '../../lib/doodleSound';
+import { clamp } from '../../lib/random';
+import { MIN_SIZE, MAX_SIZE } from '../../lib/doodleShapes';
 import Shape from './Shape';
 import Stroke from './Stroke';
 import styles from './doodle.module.css';
@@ -11,10 +13,11 @@ const DOUBLE_TAP_MS = 300;
 const MUTE_KEY = 'doodle-muted';
 const MAX_DT = 0.05; // clamp frame delta so a backgrounded tab doesn't jump
 const MAX_POINTERS = 10; // defensive ceiling, not a gameplay limit
+const PINCH_WINDOW_MS = 150; // two touches must land within this of each other to start a pinch
 
 export default function DoodleCanvas({ rng, sound }) {
   const {
-    objects, spawnShape, startStroke, appendStrokePoint, moveShape, popShape, advance, clear,
+    objects, spawnShape, startStroke, appendStrokePoint, moveShape, transformShape, popShape, advance, clear,
   } = useDoodleObjects(rng);
 
   const svgRef = useRef(null);
@@ -26,6 +29,7 @@ export default function DoodleCanvas({ rng, sound }) {
   objectsRef.current = objects;
 
   const pointersRef = useRef(new Map()); // pointerId -> PointerState
+  const pinchesRef = useRef(new Map()); // shapeId -> PinchState
   const lastTapRef = useRef(new Map()); // shapeId -> { x, y, time }
   const pulseTimer = useRef(null);
   const [pulsingId, setPulsingId] = useState(null);
@@ -59,7 +63,7 @@ export default function DoodleCanvas({ rng, sound }) {
       if (rect && rect.width && rect.height) {
         const grabbedIds = new Set();
         pointersRef.current.forEach((entry) => {
-          if (entry.mode === 'drag') grabbedIds.add(entry.shapeId);
+          if (entry.mode === 'drag' || entry.mode === 'pinch-member') grabbedIds.add(entry.shapeId);
         });
         advance(dt, { width: rect.width, height: rect.height }, grabbedIds);
       }
@@ -73,6 +77,7 @@ export default function DoodleCanvas({ rng, sound }) {
   useEffect(() => () => {
     if (pulseTimer.current) clearTimeout(pulseTimer.current);
     pointersRef.current.clear();
+    pinchesRef.current.clear();
   }, []);
 
   const toLocal = (e) => {
@@ -83,6 +88,12 @@ export default function DoodleCanvas({ rng, sound }) {
   // A shape group carries data-id; strokes (polylines) do not. So the presence
   // of a [data-id] ancestor is exactly "the pointer landed on a shape".
   const shapeIdFromTarget = (target) => target?.closest?.('[data-id]')?.getAttribute('data-id') || null;
+
+  // A shape is "claimed" once it has an active drag or an active pinch; a
+  // pointer landing on a claimed shape becomes inert rather than starting a
+  // second, conflicting gesture on the same shape.
+  const shapeIsClaimed = (shapeId) => pinchesRef.current.has(shapeId)
+    || [...pointersRef.current.values()].some((entry) => entry.shapeId === shapeId && entry.mode === 'drag');
 
   const triggerPulse = (id) => {
     setPulsingId(id);
@@ -112,17 +123,39 @@ export default function DoodleCanvas({ rng, sound }) {
   const onPointerDown = (e) => {
     if (pointersRef.current.size >= MAX_POINTERS) return;
     const pt = toLocal(e);
+    const shapeId = shapeIdFromTarget(e.target);
+    const now = Date.now();
+
+    if (shapeId && shapeIsClaimed(shapeId)) {
+      pointersRef.current.set(e.pointerId, {
+        pointerId: e.pointerId, mode: 'inert', shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now,
+      });
+      return;
+    }
+
+    if (shapeId) {
+      const partnerEntry = [...pointersRef.current.entries()].find(([, entry]) => (
+        entry.shapeId === shapeId && entry.mode === null && !entry.moved
+        && now - entry.downTime < PINCH_WINDOW_MS
+      ));
+      if (partnerEntry) {
+        const [partnerId, partner] = partnerEntry;
+        const shape = objectsRef.current.find((o) => o.id === shapeId);
+        const startDist = Math.max(Math.hypot(pt.x - partner.startX, pt.y - partner.startY), 1);
+        const startAngle = Math.atan2(pt.y - partner.startY, pt.x - partner.startX) * (180 / Math.PI);
+        pinchesRef.current.set(shapeId, {
+          pointerIds: [partnerId, e.pointerId], startDist, startAngle, startSize: shape.size, startRotation: shape.rotation,
+        });
+        partner.mode = 'pinch-member';
+        pointersRef.current.set(e.pointerId, {
+          pointerId: e.pointerId, mode: 'pinch-member', shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now,
+        });
+        return;
+      }
+    }
+
     pointersRef.current.set(e.pointerId, {
-      pointerId: e.pointerId,
-      mode: null,
-      shapeId: shapeIdFromTarget(e.target),
-      startX: pt.x,
-      startY: pt.y,
-      x: pt.x,
-      y: pt.y,
-      moved: false,
-      strokeId: null,
-      downTime: Date.now(),
+      pointerId: e.pointerId, mode: null, shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: false, strokeId: null, downTime: now,
     });
   };
 
@@ -132,11 +165,33 @@ export default function DoodleCanvas({ rng, sound }) {
     const pt = toLocal(e);
     p.x = pt.x;
     p.y = pt.y;
+
+    if (p.mode === 'inert') return;
+
+    if (p.mode === 'pinch-member') {
+      const pinch = pinchesRef.current.get(p.shapeId);
+      if (!pinch) return;
+      const [idA, idB] = pinch.pointerIds;
+      const a = pointersRef.current.get(idA);
+      const b = pointersRef.current.get(idB);
+      if (!a || !b) return;
+      const liveDist = Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1);
+      const liveAngle = Math.atan2(b.y - a.y, b.x - a.x) * (180 / Math.PI);
+      const size = clamp(pinch.startSize * (liveDist / pinch.startDist), MIN_SIZE, MAX_SIZE);
+      const rotation = pinch.startRotation + (liveAngle - pinch.startAngle);
+      transformShape(p.shapeId, { size, rotation });
+      return;
+    }
+
     if (!p.moved) {
       const distMoved = Math.hypot(pt.x - p.startX, pt.y - p.startY);
       if (distMoved < MOVE_THRESHOLD) return;
       p.moved = true;
       if (p.shapeId) {
+        if (shapeIsClaimed(p.shapeId)) {
+          p.mode = 'inert';
+          return;
+        }
         p.mode = 'drag';
       } else {
         p.mode = 'draw';
@@ -152,6 +207,25 @@ export default function DoodleCanvas({ rng, sound }) {
     const p = pointersRef.current.get(e.pointerId);
     if (!p) return;
     pointersRef.current.delete(e.pointerId);
+
+    if (p.mode === 'inert') return;
+
+    if (p.mode === 'pinch-member') {
+      const pinch = pinchesRef.current.get(p.shapeId);
+      pinchesRef.current.delete(p.shapeId);
+      if (pinch) {
+        const otherId = pinch.pointerIds.find((id) => id !== e.pointerId);
+        const other = pointersRef.current.get(otherId);
+        if (other) {
+          other.mode = 'drag';
+          other.moved = true;
+          other.startX = other.x;
+          other.startY = other.y;
+        }
+      }
+      return;
+    }
+
     if (p.moved) return; // drag/draw already handled on move
     if (p.shapeId) {
       handleShapeTap(p.shapeId, p.startX, p.startY);
@@ -167,7 +241,23 @@ export default function DoodleCanvas({ rng, sound }) {
   // toddler's whole hand lands on the screen. A cancelled pointer's entry is
   // simply dropped, freeing that slot for future touches.
   const onPointerCancel = (e) => {
+    const p = pointersRef.current.get(e.pointerId);
+    if (!p) return;
     pointersRef.current.delete(e.pointerId);
+    if (p.mode === 'pinch-member') {
+      const pinch = pinchesRef.current.get(p.shapeId);
+      pinchesRef.current.delete(p.shapeId);
+      if (pinch) {
+        const otherId = pinch.pointerIds.find((id) => id !== e.pointerId);
+        const other = pointersRef.current.get(otherId);
+        if (other) {
+          other.mode = 'drag';
+          other.moved = true;
+          other.startX = other.x;
+          other.startY = other.y;
+        }
+      }
+    }
   };
 
   return (

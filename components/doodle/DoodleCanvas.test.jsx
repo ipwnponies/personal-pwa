@@ -282,4 +282,135 @@ describe('DoodleCanvas', () => {
     expect(transform).toMatch(/^translate\(100 100\)/); // 140-40, 120-20
     rectSpy.mockRestore();
   });
+
+  it('two fingers landing together on the same shape pinch-resizes and rotates it', () => {
+    // rng=0.1 -> shapeType index floor(0.1*4)=0 ('circle'), size=28+52*0.1=33.2,
+    // rotation=0.1*360=36 — a circle keeps the size assertion simple (its `r`
+    // attribute is size/2 directly, no polygon-point math needed).
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const circleBefore = g.querySelector('circle');
+    const rBefore = Number(circleBefore.getAttribute('r'));
+    const transformBefore = g.getAttribute('transform');
+
+    // Two fingers touch down together on the shape, 20px apart horizontally.
+    fireEvent.pointerDown(g, { clientX: 190, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(g, { clientX: 210, clientY: 200, pointerId: 11 });
+    // Spread apart AND offset vertically -> both distance and angle change.
+    fireEvent.pointerMove(svg, { clientX: 170, clientY: 180, pointerId: 10 });
+    fireEvent.pointerMove(svg, { clientX: 230, clientY: 220, pointerId: 11 });
+
+    const circleAfter = container.querySelector(`[data-id="${g.getAttribute('data-id')}"] circle`);
+    const rAfter = Number(circleAfter.getAttribute('r'));
+    const transformAfter = container.querySelector(`[data-id="${g.getAttribute('data-id')}"]`).getAttribute('transform');
+
+    expect(rAfter).toBeGreaterThan(rBefore); // grew
+    expect(rAfter).toBeLessThanOrEqual(40); // clamped to MAX_SIZE/2
+    expect(transformAfter).not.toBe(transformBefore); // rotation (and translate string) changed
+    expect(transformAfter).toMatch(/^translate\(200 200\)/); // center did not move
+  });
+
+  it('pinch resize clamps at MIN_SIZE/MAX_SIZE instead of overshooting', () => {
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+
+    fireEvent.pointerDown(g, { clientX: 195, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(g, { clientX: 205, clientY: 200, pointerId: 11 });
+    // Enormous spread -> would far exceed MAX_SIZE without clamping.
+    fireEvent.pointerMove(svg, { clientX: 0, clientY: 200, pointerId: 10 });
+    fireEvent.pointerMove(svg, { clientX: 900, clientY: 200, pointerId: 11 });
+
+    const rAfter = Number(container.querySelector(`[data-id="${g.getAttribute('data-id')}"] circle`).getAttribute('r'));
+    expect(rAfter).toBe(40); // MAX_SIZE / 2
+  });
+
+  it('lifting one pinch finger hands off to a plain drag on the other, no jump', () => {
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const id = g.getAttribute('data-id');
+
+    fireEvent.pointerDown(g, { clientX: 190, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(g, { clientX: 210, clientY: 200, pointerId: 11 });
+    fireEvent.pointerMove(svg, { clientX: 170, clientY: 200, pointerId: 10 });
+    fireEvent.pointerMove(svg, { clientX: 230, clientY: 200, pointerId: 11 });
+    const sizeAfterPinch = container.querySelector(`[data-id="${id}"] circle`).getAttribute('r');
+
+    fireEvent.pointerUp(svg, { clientX: 170, clientY: 200, pointerId: 10 }); // one finger lifts
+    fireEvent.pointerMove(svg, { clientX: 260, clientY: 240, pointerId: 11 }); // survivor drags on
+
+    const after = container.querySelector(`[data-id="${id}"]`);
+    expect(after.getAttribute('transform')).toMatch(/^translate\(260 240\)/);
+    expect(after.querySelector('circle').getAttribute('r')).toBe(sizeAfterPinch); // size held from the pinch, not reset
+  });
+
+  it('a third finger touching an already-pinched shape is inert, not a third gesture', () => {
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const id = g.getAttribute('data-id');
+
+    fireEvent.pointerDown(g, { clientX: 190, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(g, { clientX: 210, clientY: 200, pointerId: 11 });
+    fireEvent.pointerDown(g, { clientX: 200, clientY: 190, pointerId: 12 }); // third finger, same shape
+    fireEvent.pointerMove(svg, { clientX: 200, clientY: 260, pointerId: 12 }); // moved a lot
+
+    const after = container.querySelector(`[data-id="${id}"]`);
+    expect(after.getAttribute('transform')).toMatch(/^translate\(200 200\)/); // unmoved by finger 3
+    expect(() => fireEvent.pointerUp(svg, { clientX: 200, clientY: 260, pointerId: 12 })).not.toThrow();
+  });
+
+  it('a second finger landing on an already-dragged shape does not start a second drag', () => {
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const id = g.getAttribute('data-id');
+
+    fireEvent.pointerDown(g, { clientX: 200, clientY: 200, pointerId: 20 });
+    fireEvent.pointerMove(svg, { clientX: 220, clientY: 200, pointerId: 20 }); // finger 20 is now dragging
+
+    fireEvent.pointerDown(g, { clientX: 200, clientY: 200, pointerId: 21 }); // finger 21 lands late (outside pinch window)
+    fireEvent.pointerMove(svg, { clientX: 200, clientY: 400, pointerId: 21 }); // tries to move it elsewhere
+
+    fireEvent.pointerMove(svg, { clientX: 240, clientY: 200, pointerId: 20 }); // finger 20 keeps dragging
+
+    const transform = container.querySelector(`[data-id="${id}"]`).getAttribute('transform');
+    expect(transform).toMatch(/^translate\(240 200\)/); // driven only by finger 20
+  });
+
+  it('two fingers on the same shape outside PINCH_WINDOW_MS do not pinch — first mover just drags', () => {
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const id = g.getAttribute('data-id');
+    const rBefore = g.querySelector('circle').getAttribute('r');
+
+    const nowSpy = vi.spyOn(Date, 'now');
+    nowSpy.mockReturnValue(0);
+    fireEvent.pointerDown(g, { clientX: 190, clientY: 200, pointerId: 30 }); // finger A, t=0
+    nowSpy.mockReturnValue(500); // 500ms later — well outside the 150ms pinch window
+    fireEvent.pointerDown(g, { clientX: 210, clientY: 200, pointerId: 31 }); // finger B, t=500
+
+    fireEvent.pointerMove(svg, { clientX: 150, clientY: 200, pointerId: 30 }); // A moves first -> claims the shape as a drag
+    fireEvent.pointerMove(svg, { clientX: 400, clientY: 400, pointerId: 31 }); // B tries to move too -> inert, shape already claimed
+
+    const after = container.querySelector(`[data-id="${id}"]`);
+    expect(after.getAttribute('transform')).toMatch(/^translate\(150 200\)/); // driven only by finger A's drag
+    expect(after.querySelector('circle').getAttribute('r')).toBe(rBefore); // no pinch resize happened
+    nowSpy.mockRestore();
+  });
 });
