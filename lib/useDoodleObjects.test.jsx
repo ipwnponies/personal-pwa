@@ -53,18 +53,51 @@ describe('useDoodleObjects', () => {
     expect(result.current.objects.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('advance moves non-grabbed shapes and skips the grabbed one', () => {
+  it('advance moves non-grabbed shapes and skips shapes in the grabbed set', () => {
     const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
     let a;
     let b;
     act(() => { a = result.current.spawnShape(100, 100); });
     act(() => { b = result.current.spawnShape(200, 200); });
     const before = result.current.objects.find((o) => o.id === b.id);
-    act(() => result.current.advance(1, { width: 1000, height: 1000 }, b.id));
+    act(() => result.current.advance(1, { width: 1000, height: 1000 }, new Set([b.id])));
     const afterA = result.current.objects.find((o) => o.id === a.id);
     const afterB = result.current.objects.find((o) => o.id === b.id);
     expect(afterB.x).toBe(before.x); // grabbed shape unchanged
     expect(afterA.x !== 100 || afterA.y !== 100).toBe(true); // moved
+  });
+
+  it('advance skips every shape whose id is in the grabbed set', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    let a;
+    let b;
+    act(() => { a = result.current.spawnShape(100, 100); });
+    act(() => { b = result.current.spawnShape(200, 200); });
+    act(() => result.current.advance(1, { width: 1000, height: 1000 }, new Set([a.id, b.id])));
+    const afterA = result.current.objects.find((o) => o.id === a.id);
+    const afterB = result.current.objects.find((o) => o.id === b.id);
+    expect(afterA.x).toBe(100);
+    expect(afterB.x).toBe(200);
+  });
+
+  it('transformShape updates size and rotation on the matching shape', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(0, 0); });
+    act(() => result.current.transformShape(shape.id, { size: 50, rotation: 120 }));
+    const updated = result.current.objects.find((o) => o.id === shape.id);
+    expect(updated.size).toBe(50);
+    expect(updated.rotation).toBe(120);
+    expect(updated.x).toBe(shape.x); // unaffected
+    expect(updated.y).toBe(shape.y); // unaffected
+  });
+
+  it('transformShape no-ops for an unknown id', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    act(() => { result.current.spawnShape(0, 0); });
+    const before = result.current.objects;
+    act(() => result.current.transformShape('does-not-exist', { size: 999, rotation: 999 }));
+    expect(result.current.objects).toEqual(before);
   });
 
   it('clear empties the array', () => {
