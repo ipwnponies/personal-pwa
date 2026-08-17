@@ -37,7 +37,8 @@ drags, things appear and react, and that is the whole loop.
 - No shape recognition or snapping — a drawn line stays exactly as drawn.
 - No color/shape picker UI; randomness on spawn is the surprise-and-delight
   mechanism and avoids menus a young child cannot parse.
-- No pinch/multi-touch. Single-pointer interactions only.
+- ~~No pinch/multi-touch. Single-pointer interactions only.~~ Superseded by
+  `docs/superpowers/specs/2026-08-16-doodle-multitouch-design.md`.
 - No bundled audio files — all sound is synthesized at runtime.
 - No account, no sharing, no export.
 
