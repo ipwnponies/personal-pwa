@@ -309,7 +309,10 @@ describe('DoodleCanvas', () => {
   it('two fingers landing together on the same shape pinch-resizes and rotates it', () => {
     // rng=0.1 -> shapeType index floor(0.1*4)=0 ('circle'), size=28+52*0.1=33.2,
     // rotation=0.1*360=36 — a circle keeps the size assertion simple (its `r`
-    // attribute is size/2 directly, no polygon-point math needed).
+    // attribute is size/2 directly, no polygon-point math needed). Pinned to
+    // phone scale (1x): this test is about the pinch clamp bounds, not
+    // viewport-based sizing.
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);
     const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
     const svg = stage(container);
     fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
@@ -334,9 +337,13 @@ describe('DoodleCanvas', () => {
     expect(rAfter).toBeLessThanOrEqual(40); // clamped to MAX_SIZE/2
     expect(transformAfter).not.toBe(transformBefore); // rotation (and translate string) changed
     expect(transformAfter).toMatch(/^translate\(200 200\)/); // center did not move
+    widthSpy.mockRestore();
   });
 
   it('pinch resize clamps at MIN_SIZE/MAX_SIZE instead of overshooting', () => {
+    // Pinned to phone scale (1x): this test is about the pinch clamp bounds,
+    // not viewport-based sizing.
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);
     const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
     const svg = stage(container);
     fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
@@ -351,6 +358,27 @@ describe('DoodleCanvas', () => {
 
     const rAfter = Number(container.querySelector(`[data-id="${g.getAttribute('data-id')}"] circle`).getAttribute('r'));
     expect(rAfter).toBe(40); // MAX_SIZE / 2
+    widthSpy.mockRestore();
+  });
+
+  it('pinch resize on a tablet-scaled shape clamps to its own 2x bounds, not the 1x range', () => {
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1024);
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+
+    fireEvent.pointerDown(g, { clientX: 195, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(g, { clientX: 205, clientY: 200, pointerId: 11 });
+    // Enormous spread -> would far exceed the 1x MAX_SIZE (80) but should
+    // clamp at the shape's own 2x range (160) instead.
+    fireEvent.pointerMove(svg, { clientX: 0, clientY: 200, pointerId: 10 });
+    fireEvent.pointerMove(svg, { clientX: 900, clientY: 200, pointerId: 11 });
+
+    const rAfter = Number(container.querySelector(`[data-id="${g.getAttribute('data-id')}"] circle`).getAttribute('r'));
+    expect(rAfter).toBe(80); // MAX_SIZE(80) * sizeMultiplier(2) / 2
+    widthSpy.mockRestore();
   });
 
   it('lifting one pinch finger hands off to a plain drag on the other, no jump', () => {
