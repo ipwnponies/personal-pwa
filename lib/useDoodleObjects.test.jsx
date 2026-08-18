@@ -21,6 +21,13 @@ describe('useDoodleObjects', () => {
     expect(result.current.objects[0].kind).toBe('shape');
   });
 
+  it('spawnShape threads sizeMultiplier through to the created shape', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(0, 0, 2); });
+    expect(shape.sizeMultiplier).toBe(2);
+  });
+
   it('startStroke then appendStrokePoint builds a stroke', () => {
     const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
     let id;
