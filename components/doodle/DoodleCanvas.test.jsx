@@ -561,4 +561,36 @@ describe('DoodleCanvas', () => {
     nowSpy.mockRestore();
     rectSpy.mockRestore();
   });
+
+  it('a shape being dragged with a single finger does not drift during the drift loop', () => {
+    // Same rAF-driving setup as the pinch/drift-loop tests above, exercising
+    // the plain single-pointer 'drag' branch of the grabbed-ids wiring.
+    const cbs = [];
+    vi.stubGlobal('requestAnimationFrame', (cb) => { cbs.push(cb); return cbs.length; });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    const rect = {
+      width: 1000, height: 1000, left: 0, top: 0, right: 1000, bottom: 1000, x: 0, y: 0, toJSON: () => ({}),
+    };
+    const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect);
+    const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(0);
+
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const id = g.getAttribute('data-id');
+
+    fireEvent.pointerDown(g, { clientX: 200, clientY: 200, pointerId: 2 });
+    fireEvent.pointerMove(svg, { clientX: 260, clientY: 240, pointerId: 2 }); // enter drag
+    const before = container.querySelector(`[data-id="${id}"]`).getAttribute('transform');
+
+    act(() => { cbs[cbs.length - 1](500); }); // 0.5s elapsed -> drift loop ticks
+
+    const after = container.querySelector(`[data-id="${id}"]`).getAttribute('transform');
+    expect(after).toBe(before); // held still by the drag, not drifted
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
 });
