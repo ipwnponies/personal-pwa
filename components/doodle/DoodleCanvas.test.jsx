@@ -220,6 +220,9 @@ describe('DoodleCanvas', () => {
 
   it('double-tap requires the second tap near the first — far-apart taps do not pop', () => {
     const sound = mockSound();
+    // Pinned to phone scale (1x): this test is about the raw DOUBLE_TAP_RADIUS
+    // (24px), not viewport-based sizing.
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);
     // rng high so the spawned shape is large enough that (100,100) and (135,100)
     // both land on it (radius ~40), isolating "far apart" from "missed the shape".
     const { container } = render(<DoodleCanvas rng={seq([0.99])} sound={sound} />);
@@ -237,10 +240,14 @@ describe('DoodleCanvas', () => {
 
     expect(container.querySelector(`[data-id="${firstId}"]`)).not.toBeNull(); // not popped
     expect(sound.playPop).not.toHaveBeenCalled();
+    widthSpy.mockRestore();
   });
 
   it('double-tap pops when the second tap lands near the first, from a different pointerId', () => {
     const sound = mockSound();
+    // Pinned to phone scale (1x): this test is about the raw DOUBLE_TAP_RADIUS
+    // (24px), not viewport-based sizing.
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);
     const { container } = render(<DoodleCanvas rng={seq([0.99])} sound={sound} />);
     const svg = stage(container);
     fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
@@ -256,6 +263,29 @@ describe('DoodleCanvas', () => {
 
     expect(container.querySelector(`[data-id="${firstId}"]`)).toBeNull(); // popped
     expect(sound.playPop).toHaveBeenCalledTimes(1);
+    widthSpy.mockRestore();
+  });
+
+  it('double-tap proximity radius scales with a tablet-scaled shape\'s sizeMultiplier', () => {
+    const sound = mockSound();
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1024);
+    const { container } = render(<DoodleCanvas rng={seq([0.99])} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const firstId = g.getAttribute('data-id');
+
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    // 35px apart — beyond the flat 24px radius, but within the tablet-scaled
+    // radius (24 * sizeMultiplier(2) = 48px).
+    fireEvent.pointerDown(g, { clientX: 135, clientY: 100, pointerId: 3 });
+    fireEvent.pointerUp(g, { clientX: 135, clientY: 100, pointerId: 3 });
+
+    expect(container.querySelector(`[data-id="${firstId}"]`)).toBeNull(); // popped
+    expect(sound.playPop).toHaveBeenCalledTimes(1);
+    widthSpy.mockRestore();
   });
 
   it('caps concurrent pointers and ignores extras beyond the limit', () => {

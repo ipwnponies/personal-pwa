@@ -142,7 +142,11 @@ export default function DoodleCanvas({ rng, sound }) {
   const handleShapeTap = (id, x, y) => {
     const now = Date.now();
     const last = lastTapRef.current.get(id);
-    if (last && now - last.time < DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) < DOUBLE_TAP_RADIUS) {
+    const shape = objectsRef.current.find((o) => o.id === id);
+    // Scale the proximity radius with the shape's own size so a tablet-scaled
+    // (larger) shape stays just as forgiving to double-tap as a phone-scale one.
+    const doubleTapRadius = DOUBLE_TAP_RADIUS * (shape?.sizeMultiplier || 1);
+    if (last && now - last.time < DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) < doubleTapRadius) {
       lastTapRef.current.delete(id);
       popShape(id);
       soundRef.current.playPop();
@@ -155,7 +159,6 @@ export default function DoodleCanvas({ rng, sound }) {
       if (shapeId !== id && now - entry.time >= DOUBLE_TAP_MS) lastTapRef.current.delete(shapeId);
     });
     triggerPulse(id);
-    const shape = objectsRef.current.find((o) => o.id === id);
     if (shape) soundRef.current.playNote(shape.note);
   };
 
