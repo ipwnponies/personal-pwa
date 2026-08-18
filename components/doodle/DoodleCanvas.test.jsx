@@ -43,6 +43,28 @@ describe('DoodleCanvas', () => {
     expect(sound.playNote).toHaveBeenCalledTimes(1);
   });
 
+  it('spawns tablet-scaled shapes (2x) on tablet+ viewports', () => {
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1024);
+    const { container } = render(<DoodleCanvas rng={seq([0])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const circle = container.querySelector('svg > g[data-id] circle');
+    expect(circle.getAttribute('r')).toBe('28'); // MIN_SIZE(28) * 2 / 2
+    widthSpy.mockRestore();
+  });
+
+  it('spawns phone-scaled shapes (1x) below the tablet breakpoint', () => {
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);
+    const { container } = render(<DoodleCanvas rng={seq([0])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const circle = container.querySelector('svg > g[data-id] circle');
+    expect(circle.getAttribute('r')).toBe('14'); // MIN_SIZE(28) * 1 / 2
+    widthSpy.mockRestore();
+  });
+
   it('drag on empty space draws a stroke', () => {
     const sound = mockSound();
     const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);
@@ -419,7 +441,9 @@ describe('DoodleCanvas', () => {
     // rng=0.3 -> shapeType index floor(0.3*4)=1 ('square'), spawn size
     // 28+52*0.3=43.6. Popping it yields children at half that size (~21.8px),
     // below MIN_SIZE (28px) — the spawn floor, which should not apply to
-    // already-split shards.
+    // already-split shards. Pinned to phone scale (1x): this test is about
+    // the MIN_SIZE floor, not viewport-based sizing.
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);
     const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
     const svg = stage(container);
     fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
@@ -449,6 +473,7 @@ describe('DoodleCanvas', () => {
     const sizeAfter = Number(container.querySelector(`[data-id="${childId}"] rect`).getAttribute('width'));
     expect(sizeAfter).toBeLessThan(28); // did not jump up to MIN_SIZE
     expect(sizeAfter).toBeCloseTo(sizeBefore, 5); // clamped at its own starting size
+    widthSpy.mockRestore();
   });
 
   it('two shapes tapped concurrently by different fingers both pulse without cancelling each other', () => {

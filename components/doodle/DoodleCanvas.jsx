@@ -25,6 +25,13 @@ export default function DoodleCanvas({ rng, sound }) {
   const soundRef = useRef(null);
   if (soundRef.current === null) soundRef.current = sound || createDoodleSound();
 
+  // Read once at mount rather than reactively — kids aren't expected to
+  // resize or rotate the window mid-play.
+  const sizeMultiplierRef = useRef(null);
+  if (sizeMultiplierRef.current === null) {
+    sizeMultiplierRef.current = (typeof window !== 'undefined' && window.innerWidth >= 768) ? 2 : 1;
+  }
+
   // Mirror latest objects for event handlers (avoids stale closures).
   const objectsRef = useRef(objects);
   objectsRef.current = objects;
@@ -264,7 +271,7 @@ export default function DoodleCanvas({ rng, sound }) {
       handleShapeTap(p.shapeId, p.startX, p.startY);
     } else {
       const pt = toLocal(e);
-      const shape = spawnShape(pt.x, pt.y);
+      const shape = spawnShape(pt.x, pt.y, sizeMultiplierRef.current);
       soundRef.current.playNote(shape.note);
     }
   };
