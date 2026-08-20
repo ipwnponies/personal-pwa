@@ -4,17 +4,28 @@ import { useDoodleObjects } from '../../lib/useDoodleObjects';
 import { createDoodleSound } from '../../lib/doodleSound';
 import { clamp } from '../../lib/random';
 import { MIN_SIZE, MAX_SIZE } from '../../lib/doodleShapes';
+import {
+  spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles,
+} from '../../lib/doodleParticles';
 import Shape from './Shape';
 import Stroke from './Stroke';
+import Particles from './Particles';
 import styles from './doodle.module.css';
 
 const MOVE_THRESHOLD = 8; // px of movement before a press becomes a drag/draw
 const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_RADIUS = MOVE_THRESHOLD * 3; // proximity a second tap must land within to complete a double-tap
 const MUTE_KEY = 'doodle-muted';
+const TRAILS_KEY = 'doodle-trails';
 const MAX_DT = 0.05; // clamp frame delta so a backgrounded tab doesn't jump
 const MAX_POINTERS = 10; // defensive ceiling, not a gameplay limit
 const PINCH_WINDOW_MS = 150; // two touches must land within this of each other to start a pinch
+const DUST_VELOCITY_THRESHOLD = 5; // px/s below which a shape is considered stationary
+// Every shape drifts at DRIFT_SPEED (18px/s) with no damping, so the velocity
+// threshold above is effectively always true — spawning dust every frame for
+// every shape would starve the particle buffer's rarer merge/collision
+// effects. Throttle to roughly 1 in 3 frames instead.
+const DUST_FRAME_INTERVAL = 3;
 
 export default function DoodleCanvas({ rng, sound }) {
   const {
@@ -40,8 +51,20 @@ export default function DoodleCanvas({ rng, sound }) {
   const pinchesRef = useRef(new Map()); // shapeId -> PinchState
   const lastTapRef = useRef(new Map()); // shapeId -> { x, y, time }
   const pulseTimers = useRef(new Map()); // shapeId -> timeoutId
+  const particlesRef = useRef([]);
+  // Shared append point for every particle-spawning call site (dust, bounce,
+  // merge, tap-squash, pop-burst) so they don't each hand-roll the same
+  // array-spread.
+  const addParticles = (newParticles) => {
+    if (newParticles.length === 0) return;
+    particlesRef.current = [...particlesRef.current, ...newParticles];
+  };
   const [pulsingIds, setPulsingIds] = useState(new Set());
   const [muted, setMuted] = useState(false);
+  const [trailsEnabled, setTrailsEnabled] = useState(true);
+
+  const trailsEnabledRef = useRef(trailsEnabled);
+  trailsEnabledRef.current = trailsEnabled;
 
   // Load + persist the mute preference (separate from canvas content).
   useEffect(() => {
@@ -60,25 +83,79 @@ export default function DoodleCanvas({ rng, sound }) {
     }
   }, [muted]);
 
-  // Single rAF drift loop. Grabbed shape (if any) is held still.
+  // Load + persist the trail preference (default on; a parent/kid can turn
+  // it off if it costs too much on a lower-end device).
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(TRAILS_KEY);
+      if (stored !== null) setTrailsEnabled(stored === 'true');
+    } catch {
+      // ignore — default to enabled
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(TRAILS_KEY, String(trailsEnabled));
+    } catch {
+      // ignore — preference just won't persist
+    }
+  }, [trailsEnabled]);
+
+  // Single rAF drift loop. Every grabbed shape (drag or pinch member) is held still.
   useEffect(() => {
     let raf;
     let last = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    // Dust is throttled to roughly every 3rd frame (see DUST_FRAME_INTERVAL)
+    // so ambient dust from every on-screen shape doesn't evict the rarer,
+    // longer-lived merge-spiral/collision-spark particles from the
+    // fixed-size particle buffer.
+    let frameCount = 0;
     const tick = (now) => {
       const dt = Math.min((now - last) / 1000, MAX_DT);
       last = now;
+      particlesRef.current = advanceParticles(particlesRef.current, dt);
       const rect = svgRef.current?.getBoundingClientRect();
       if (rect && rect.width && rect.height) {
         const grabbedIds = new Set();
         pointersRef.current.forEach((entry) => {
           if (entry.mode === 'drag' || entry.mode === 'pinch-member') grabbedIds.add(entry.shapeId);
         });
-        advance(dt, { width: rect.width, height: rect.height }, grabbedIds);
+        const spawnDustThisFrame = frameCount % DUST_FRAME_INTERVAL === 0;
+        frameCount += 1;
+        if (trailsEnabledRef.current && spawnDustThisFrame) {
+          // Batch every shape's dust into one local array and append once,
+          // instead of re-spreading the (up to MAX_PARTICLES-sized) particle
+          // array once per qualifying shape.
+          const dust = [];
+          objectsRef.current.forEach((o) => {
+            // A grabbed shape still has a (pre-grab) vx/vy, so it still
+            // leaves a trail while being dragged — it's just not
+            // pointer-delta-accurate, which is fine for a dust trail.
+            if (o.kind !== 'shape') return;
+            const speed = Math.hypot(o.vx, o.vy);
+            if (speed > DUST_VELOCITY_THRESHOLD) {
+              dust.push(...spawnDust(o.x, o.y, o.vx, o.vy, o.color));
+            }
+          });
+          addParticles(dust);
+        }
+        const events = advance(dt, { width: rect.width, height: rect.height }, grabbedIds);
+        events.forEach((event) => {
+          if (event.type === 'bounce') {
+            addParticles(spawnBurst(event.x, event.y, event.color, event.normal));
+          } else if (event.type === 'merge') {
+            addParticles(spawnSpiral(event.fromX, event.fromY, event.x, event.y, event.color));
+            soundRef.current.playNote(event.note);
+          }
+        });
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    // Guarded: some test environments swap fake timers back to real ones
+    // (vi.useRealTimers()) after stubbing cancelAnimationFrame, which can
+    // leave it transiently undefined during unmount cleanup.
+    return () => { if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(raf); };
   }, [advance]);
 
   // Clear every pending pulse timeout on unmount (consistent with the rAF cleanup).
@@ -150,6 +227,9 @@ export default function DoodleCanvas({ rng, sound }) {
       lastTapRef.current.delete(id);
       popShape(id);
       soundRef.current.playPop();
+      if (shape) {
+        addParticles(spawnBurst(shape.x, shape.y, shape.color));
+      }
       return;
     }
     lastTapRef.current.set(id, { x, y, time: now });
@@ -159,7 +239,10 @@ export default function DoodleCanvas({ rng, sound }) {
       if (shapeId !== id && now - entry.time >= DOUBLE_TAP_MS) lastTapRef.current.delete(shapeId);
     });
     triggerPulse(id);
-    if (shape) soundRef.current.playNote(shape.note);
+    if (shape) {
+      soundRef.current.playNote(shape.note);
+      addParticles(spawnSquashPoof(shape.x, shape.y, shape.color));
+    }
   };
 
   // Note: we rely on the browser's implicit pointer capture — on touch, the
@@ -313,6 +396,7 @@ export default function DoodleCanvas({ rng, sound }) {
         {objects.map((o) => (o.kind === 'shape'
           ? <Shape key={o.id} shape={o} pulsing={pulsingIds.has(o.id)} />
           : <Stroke key={o.id} stroke={o} />))}
+        <Particles particles={particlesRef.current} />
       </svg>
       <div className={styles.toolbar}>
         <button
@@ -330,6 +414,14 @@ export default function DoodleCanvas({ rng, sound }) {
           onClick={() => setMuted((m) => !m)}
         >
           {muted ? '🔇' : '🔊'}
+        </button>
+        <button
+          type="button"
+          className={styles.toolButton}
+          aria-label={trailsEnabled ? 'Disable trails' : 'Enable trails'}
+          onClick={() => setTrailsEnabled((t) => !t)}
+        >
+          {trailsEnabled ? '💨' : '🚫'}
         </button>
       </div>
     </div>
