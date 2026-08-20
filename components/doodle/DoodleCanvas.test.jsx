@@ -673,11 +673,15 @@ describe('DoodleCanvas', () => {
     const sound = mockSound();
     // Two spawns, 6 rng draws each: [angle, shapeType, color, rotation, size, note].
     // Color draw 0 -> COLORS[0]; color draw 0.2 -> COLORS[1] (different).
+    // shapeType draw 0 -> SHAPE_TYPES[0] ('circle') for a; shapeType draw 0.3
+    // -> SHAPE_TYPES[1] ('square') for b — deliberately different so this
+    // pair shares neither color nor shapeType (merge would otherwise fire
+    // under the new "same color OR same shapeType" rule).
     // b's angle draw (index 6) is 0.5 -> angle=pi -> b drifts toward a (-x)
     // while a drifts toward b (+x, angle 0): a genuine closing velocity, so
     // the collision produces a real impulse and fires a bounce event (a
     // bounce event only fires when velAlongNormal < 0 — see Fix 3).
-    const rng = seq([0, 0, 0, 0, 0, 0, 0.5, 0, 0.2, 0, 0, 0]);
+    const rng = seq([0, 0, 0, 0, 0, 0, 0.5, 0.3, 0.2, 0, 0, 0]);
     const { cbs, rectSpy, nowSpy } = driveOneFrame();
     const { container } = render(<DoodleCanvas rng={rng} sound={sound} />);
     const svg = stage(container);
@@ -797,6 +801,32 @@ describe('DoodleCanvas', () => {
 
     nowSpy.mockRestore();
     rectSpy.mockRestore();
+  });
+
+  it('tuning panel is closed by default and opens on toggle', () => {
+    const { container, getByLabelText, queryByRole } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    expect(queryByRole('dialog', { name: 'Tuning settings' })).toBeNull();
+    fireEvent.click(getByLabelText('Open tuning panel'));
+    expect(queryByRole('dialog', { name: 'Tuning settings' })).toBeTruthy();
+    fireEvent.click(getByLabelText('Close tuning panel'));
+    expect(queryByRole('dialog', { name: 'Tuning settings' })).toBeNull();
+    void container;
+  });
+
+  it('changing a tuning value persists it to localStorage under doodle-tuning', () => {
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Open tuning panel'));
+    fireEvent.change(getByLabelText('Max particles'), { target: { value: '400' } });
+    const stored = JSON.parse(localStorage.getItem('doodle-tuning'));
+    expect(stored.maxParticles).toBe(400);
+  });
+
+  it('reset to defaults restores the original tuning values', () => {
+    const { getByLabelText, getByText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Open tuning panel'));
+    fireEvent.change(getByLabelText('Max particles'), { target: { value: '400' } });
+    fireEvent.click(getByText('Reset to defaults'));
+    expect(getByLabelText('Max particles').value).toBe('150');
   });
 
   it('throttles dust spawning instead of spawning it on literally every frame', () => {
