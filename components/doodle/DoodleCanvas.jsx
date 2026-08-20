@@ -5,7 +5,7 @@ import { createDoodleSound } from '../../lib/doodleSound';
 import { clamp } from '../../lib/random';
 import { MIN_SIZE, MAX_SIZE } from '../../lib/doodleShapes';
 import {
-  spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles,
+  spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles, COLLISION_BURST_MAX_AGE,
 } from '../../lib/doodleParticles';
 import Shape from './Shape';
 import Stroke from './Stroke';
@@ -142,7 +142,7 @@ export default function DoodleCanvas({ rng, sound }) {
         const events = advance(dt, { width: rect.width, height: rect.height }, grabbedIds);
         events.forEach((event) => {
           if (event.type === 'bounce') {
-            addParticles(spawnBurst(event.x, event.y, event.color, event.normal));
+            addParticles(spawnBurst(event.x, event.y, event.color, event.normal, COLLISION_BURST_MAX_AGE));
           } else if (event.type === 'merge') {
             addParticles(spawnSpiral(event.fromX, event.fromY, event.x, event.y, event.color));
             soundRef.current.playNote(event.note);
