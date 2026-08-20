@@ -32,6 +32,17 @@
   cursor: pointer;
 }
 
+@media (min-width: 768px) {
+  .toolbar {
+    gap: 1rem;
+  }
+  .toolButton {
+    width: 72px;
+    height: 72px;
+    font-size: 1.8rem;
+  }
+}
+
 .pulse {
   transform-box: fill-box;
   transform-origin: center;

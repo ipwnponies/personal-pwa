@@ -25,6 +25,13 @@ export default function DoodleCanvas({ rng, sound }) {
   const soundRef = useRef(null);
   if (soundRef.current === null) soundRef.current = sound || createDoodleSound();
 
+  // Read once at mount rather than reactively — kids aren't expected to
+  // resize or rotate the window mid-play.
+  const sizeMultiplierRef = useRef(null);
+  if (sizeMultiplierRef.current === null) {
+    sizeMultiplierRef.current = (typeof window !== 'undefined' && window.innerWidth >= 768) ? 2 : 1;
+  }
+
   // Mirror latest objects for event handlers (avoids stale closures).
   const objectsRef = useRef(objects);
   objectsRef.current = objects;
@@ -135,7 +142,11 @@ export default function DoodleCanvas({ rng, sound }) {
   const handleShapeTap = (id, x, y) => {
     const now = Date.now();
     const last = lastTapRef.current.get(id);
-    if (last && now - last.time < DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) < DOUBLE_TAP_RADIUS) {
+    const shape = objectsRef.current.find((o) => o.id === id);
+    // Scale the proximity radius with the shape's own size so a tablet-scaled
+    // (larger) shape stays just as forgiving to double-tap as a phone-scale one.
+    const doubleTapRadius = DOUBLE_TAP_RADIUS * (shape?.sizeMultiplier || 1);
+    if (last && now - last.time < DOUBLE_TAP_MS && Math.hypot(x - last.x, y - last.y) < doubleTapRadius) {
       lastTapRef.current.delete(id);
       popShape(id);
       soundRef.current.playPop();
@@ -148,7 +159,6 @@ export default function DoodleCanvas({ rng, sound }) {
       if (shapeId !== id && now - entry.time >= DOUBLE_TAP_MS) lastTapRef.current.delete(shapeId);
     });
     triggerPulse(id);
-    const shape = objectsRef.current.find((o) => o.id === id);
     if (shape) soundRef.current.playNote(shape.note);
   };
 
@@ -183,7 +193,12 @@ export default function DoodleCanvas({ rng, sound }) {
         const startDist = Math.max(Math.hypot(pt.x - partner.x, pt.y - partner.y), 1);
         const startAngle = Math.atan2(pt.y - partner.y, pt.x - partner.x) * (180 / Math.PI);
         pinchesRef.current.set(shapeId, {
-          pointerIds: [partnerId, e.pointerId], startDist, startAngle, startSize: shape.size, startRotation: shape.rotation,
+          pointerIds: [partnerId, e.pointerId],
+          startDist,
+          startAngle,
+          startSize: shape.size,
+          startRotation: shape.rotation,
+          sizeMultiplier: shape.sizeMultiplier || 1,
         });
         partner.mode = 'pinch-member';
         partner.moved = true;
@@ -217,11 +232,15 @@ export default function DoodleCanvas({ rng, sound }) {
       if (!a || !b) return;
       const liveDist = Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1);
       const liveAngle = Math.atan2(b.y - a.y, b.x - a.x) * (180 / Math.PI);
-      // MIN_SIZE is the spawn floor, not a floor on every shape — popped
-      // shards routinely start below it. Never snap a shape up to MIN_SIZE on
-      // the first pinch move; let it shrink further from wherever it already was.
-      const minSize = Math.min(MIN_SIZE, pinch.startSize);
-      const size = clamp(pinch.startSize * (liveDist / pinch.startDist), minSize, MAX_SIZE);
+      // MIN_SIZE/MAX_SIZE scale with the shape's own sizeMultiplier (a
+      // tablet-spawned 2x shape pinches within its own larger range, not the
+      // phone-scale range). MIN_SIZE*multiplier is the spawn floor, not a
+      // floor on every shape — popped shards routinely start below it. Never
+      // snap a shape up to that floor on the first pinch move; let it shrink
+      // further from wherever it already was.
+      const minSize = Math.min(MIN_SIZE * pinch.sizeMultiplier, pinch.startSize);
+      const maxSize = MAX_SIZE * pinch.sizeMultiplier;
+      const size = clamp(pinch.startSize * (liveDist / pinch.startDist), minSize, maxSize);
       const rotation = pinch.startRotation + (liveAngle - pinch.startAngle);
       transformShape(p.shapeId, { size, rotation });
       return;
@@ -264,7 +283,7 @@ export default function DoodleCanvas({ rng, sound }) {
       handleShapeTap(p.shapeId, p.startX, p.startY);
     } else {
       const pt = toLocal(e);
-      const shape = spawnShape(pt.x, pt.y);
+      const shape = spawnShape(pt.x, pt.y, sizeMultiplierRef.current);
       soundRef.current.playNote(shape.note);
     }
   };
