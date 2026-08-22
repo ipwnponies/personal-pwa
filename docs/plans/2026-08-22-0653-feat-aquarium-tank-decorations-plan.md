@@ -81,12 +81,12 @@ The aquarium's current loop — feed, play, wipe a dirt spot — was built for a
 ### Key Technical Decisions
 
 - KTD1. **Decorations get a new, persistent entity list, not the food/toy drop shape.** (session-settled: user-approved — chosen over reusing `foodDrops`/`toyDrops`: decorations persist indefinitely and are individually movable, which the ephemeral consumed-on-contact drop shape does not model.) Governs U1, U3.
-- KTD2. **Grab-vs-place uses a position-based pointer-down hit-test, not `document.elementFromPoint`.** (session-settled: user-approved — chosen over reusing the existing dirt-spot `elementFromPoint` pattern: a distance-based check is a pure function, avoids the jsdom `elementFromPoint` gap noted in `.claude/rules/aquarium.md`, and matches the codebase's existing pure-function style.) Governs U3, U4.
-- KTD3. **Cap-reached refuses placement; it does not evict the oldest decoration.** (session-settled: user-approved — chosen over mirroring `addDrop`'s slice-oldest-out eviction: a placed decoration is a player-intentional, persistent object, and silently deleting one a child chose to place would break the app's no-punishment, no-surprise-loss design.) Governs R6.
-- KTD4. **Removal is drag-back-onto-the-palette.** (session-settled: user-approved — chosen over a dedicated trash-drop target: reuses existing UI, and gives the child a legible "opposite of placing" gesture.) Governs U4.
+- KTD2. **Grab-vs-place uses a position-based pointer-down hit-test, not `document.elementFromPoint`.** (session-settled: user-approved — chosen over reusing the existing dirt-spot `elementFromPoint` pattern: a distance-based check is a pure function, avoids the jsdom `elementFromPoint` gap noted in `.claude/rules/aquarium.md`, and matches the codebase's existing pure-function style.) Governs U4.
+- KTD3. **Cap-reached refuses placement; it does not evict the oldest decoration.** (session-settled: user-approved — chosen over mirroring `addDrop`'s slice-oldest-out eviction: a placed decoration is a player-intentional, persistent object, and silently deleting one a child chose to place would break the app's no-punishment, no-surprise-loss design.) A refusal fires its own perceptible cue rather than doing nothing visible — see U5. Governs R6.
+- KTD4. **Removal is drag-back-onto-the-palette.** (session-settled: user-approved — chosen over a dedicated trash-drop target: reuses existing UI, and gives the child a legible "opposite of placing" gesture.) Reaching the palette from a tank-started drag needs pointer capture, since the tank and palette are DOM siblings — see U4. Governs U4.
 - KTD5. **The per-type cap does not add spacing/overlap prevention.** (session-settled: user-approved — chosen over building collision/spacing logic to guarantee decorations can never stack on the fish: this app has no obstacle/collision concept anywhere today, and adding one is materially larger than what was brainstormed. Accepted as a known limitation — see Risks.) Governs R6.
-- KTD6. The decoration section of the tool palette stays hidden while no types are unlocked yet, revealing as items unlock — mirrors the egg only appearing once spawned, rather than inventing locked-slot iconography. Governs U5.
-- KTD7. A decoration unlock fires the existing `pulse` + `spawnEffect` + sound-cue triple (a new `'unlock'` entry in `TONES`) on the newly revealed palette icon, mirroring `wipeSpot`'s sparkle sequence. Governs U5.
+- KTD6. The decoration section of the tool palette stays hidden while no types are unlocked yet, revealing as items unlock — mirrors the egg only appearing once spawned, rather than inventing locked-slot iconography. It sits appended after the existing toy section, so the palette's spatial order stays fixed for a child navigating by position. Governs U5.
+- KTD7. A decoration unlock fires a distinguishable cue on the newly revealed palette icon: a new `'unlock'` entry in `TONES` (sound.js) plus a palette-scoped highlight of its own — not the tank-relative `pulse`/`spawnEffect` mechanism, which is positioned against the tank's bounding box and cannot target a palette element. Governs U5.
 - KTD8. The decoration-unlock meter fills on the same care actions as the egg meter but crosses its threshold at a different action count, so the two do not consistently unlock together (R7). The exact threshold is an implementation-time tuning constant, set during U3 and confirmed by playtesting rather than fixed here. Governs R7, U3.
 - KTD9. A returning player's care history from before this feature existed does not count toward their first decoration unlock — the meter starts at zero for every tank, matching how the egg mechanic itself was introduced without retroactive credit. Governs U3.
 - KTD10. New decoration fields default onto an old-shaped save at load time rather than bumping `SCHEMA_VERSION` — `storage.js` currently discards a save wholesale on any version mismatch, and this feature does not need that reset. Governs U2.
@@ -115,6 +115,7 @@ flowchart TB
 
 - **Cap doesn't guarantee no-overlap (KTD5).** Accepted for this plan; revisit only if it proves confusing in practice, at which point spacing/collision logic would be a separate, larger follow-up.
 - **Unlock-pacing desync (KTD8) needs playtesting**, not just a passing test, to confirm it reads as two distinct rewards to an actual preschooler.
+- **jsdom can't observe pointer capture or a trailing native `click`.** U4's click-suppression (step 4) and pointer-capture (step 2) fixes need a manual real-browser/touch smoke test beyond the automated suite in the Verification Contract — the existing test harness's `fireEvent` calls don't synthesize either.
 - No external dependencies — all work is within the existing `lib/aquarium/` and `pages/aquarium/` module.
 
 ---
@@ -168,20 +169,21 @@ flowchart TB
   - `lib/aquarium/simulation.test.js`
 - **Approach:**
   1. Extend the default tank shape with `decorations: []`, `decorationProgress: 0`, `unlockedDecorationTypes: []`.
-  2. Add `placeDecoration(state, typeKey, x, y)`: refuses (no-op) if that type's placed count is at the per-type cap (KTD3); otherwise appends a new decoration entry.
+  2. Add `isDecorationCapReached(state, typeKey)`: a pure predicate for whether that type is at its per-type cap. Add `placeDecoration(state, typeKey, x, y)`: refuses (no-op on `decorations`) when `isDecorationCapReached` is true; otherwise appends a new decoration entry. U4 calls the predicate first to decide which cue to fire (success vs. refusal, KTD3) without re-deriving the cap check or inventing a return-flag shape other functions here don't use.
   3. Add `moveDecoration(state, id, x, y)`: updates the matching decoration's position; no-op for an unknown id.
   4. Add `removeDecoration(state, id)`: removes the matching decoration; no-op for an unknown id.
-  5. Extend the existing care-advancing path (alongside `withEggProgress`) to also advance `decorationProgress`; on crossing its threshold, append the next catalog entry (per U1's unlock order) to `unlockedDecorationTypes` and reset progress, using a threshold that desyncs from the egg meter's (KTD8).
+  5. Advance `decorationProgress` on every care action **independently of `withEggProgress`'s `TANK_CAP` guard** — R5 calls this an independent meter, and a full tank (at its creature cap) is exactly when decoration novelty matters most, so it must not pause there. Add a standalone `advanceDecorationProgress(state, amount)` (or fold into `applyElapsed`/the care-action call sites directly) rather than extending `withEggProgress` itself. On crossing its threshold, append the next catalog entry (per U1's unlock order) to `unlockedDecorationTypes` and reset progress, using a threshold that desyncs from the egg meter's (KTD8).
   6. `unlockedDecorationTypes` starts empty for every tank, including pre-existing saves (KTD9).
-- **Technical design:** `addDrop`'s cap-and-slice-oldest pattern is the wrong model for step 2 (KTD3) — follow `withEggProgress`'s guard-and-no-op pattern instead.
+- **Technical design:** `addDrop`'s cap-and-slice-oldest pattern is the wrong model for step 2 (KTD3) — follow `withEggProgress`'s guard-and-no-op *shape* instead (check a condition, then no-op or apply). Do not, however, inherit `withEggProgress`'s `TANK_CAP` condition itself for `decorationProgress` — see step 5.
 - **Patterns to follow:** `wipeDirtSpot`'s no-op-on-unknown-id convention; the repo-wide "does not mutate the input state" test convention.
 - **Test scenarios:**
   - Happy path: placing a decoration under the cap adds it at the given position.
-  - Edge case: placing a decoration at the per-type cap is a no-op — `decorations` unchanged.
+  - Edge case: placing a decoration at the per-type cap is a no-op — `decorations` unchanged; `isDecorationCapReached` returns `true` for that type beforehand.
   - Happy path: moving an existing decoration updates its position and nothing else.
   - Edge case: moving or removing an unknown id is a no-op, state unchanged.
   - Happy path: removing a decoration frees its type's cap slot so a new one can be placed.
   - Happy path: care actions advance `decorationProgress`; crossing its threshold unlocks the next catalog type and resets progress.
+  - Edge case: `decorationProgress` keeps advancing on care actions even when `creatures.length` is at `TANK_CAP` (unlike the egg meter, which pauses there).
   - Integration: repeated identical care actions cross the egg threshold and the decoration threshold at different action counts (asserts KTD8's desync, not simultaneous crossing).
   - Mutation-safety: none of the above functions mutate the input state.
 - **Verification:** New simulation tests pass; existing egg-progress, drop-cap, and dirt-spot tests remain green and unaffected.
@@ -196,30 +198,39 @@ flowchart TB
   - `__tests__/pages/aquarium/index.test.jsx`
 - **Approach:**
   1. In `handleTankPointerDown`, before setting today's drag state, hit-test the pointer-down point against `tank.decorations` using a distance check (mirrors `distance()` in `simulation.js`) within a small grab radius (sibling constant to `CONTACT_RADIUS`/`DETECTION_RADIUS`); the nearest decoration within radius wins on overlap.
-  2. On a hit, enter a grab mode carrying the decoration id instead of today's paint mode; `handleTankPointerMove` repositions that one decoration (`moveDecoration`) instead of sampling paint-drops along the path.
-  3. On pointer-up: if released over the palette's decoration section, call `removeDecoration` (KTD4); otherwise the decoration stays at its last dragged position, already committed via `moveDecoration`.
-  4. When no decoration is hit, fall through unchanged to the existing dirt-spot/paint-drop dispatch.
+  2. On a hit, enter a grab mode carrying the decoration id and call `el.setPointerCapture(e.pointerId)` on the tank element, so the tank keeps receiving `pointermove`/`pointerup` even once the pointer leaves its bounds — without this, `onPointerLeave={endTankDrag}` clears drag state the moment the pointer crosses into the (sibling, not nested) palette, and a drag-to-remove release is never observed. Suppress `endTankDrag`'s early clear while a decoration grab is in flight.
+  3. `handleTankPointerMove` repositions the grabbed decoration (`moveDecoration`) instead of sampling paint-drops along the path, clamping `x`/`y` to the tank's 0..1 coordinate space so a decoration can't be dragged outside the visible tank and become unreachable.
+  4. On pointer-up: test the release point against the palette's decoration section's screen rect (now reachable thanks to pointer capture); if it's inside, call `removeDecoration` and fire the removal cue (KTD4, U5); otherwise the decoration stays at its last clamped position, already committed via `moveDecoration`. Either way, clear the grab state and **stop the trailing native `click` from also firing `handleTankClick`** (e.g. `e.stopPropagation()`/a short-lived guard flag) — the tank's `onClick` is wired independently of the pointer handlers and would otherwise place an unwanted new item at the release point, mirroring the existing `handleDirtSpotClick`'s `e.stopPropagation()` precedent for the same class of problem.
+  5. Extend `dropAt`'s tool dispatch — currently a binary `if (tank.selectedTool === 'food') ... else ...` — with a decoration branch: when `tank.selectedTool` matches an unlocked decoration type key, call `isDecorationCapReached(tank, tank.selectedTool)` first; if capped, fire the refusal cue (U5) and do not place; otherwise call `placeDecoration(prev, tank.selectedTool, x, y)`.
+  6. When no decoration is hit at pointer-down, fall through to step 5's dispatch (dirt-spot / paint-drop / decoration-place), unchanged from today except for the new decoration branch.
 - **Technical design:**
   ```
   pointerDown(x, y):
     if nearest_decoration_within(x, y, GRAB_RADIUS) exists:
-      mode = grab-decoration; carry its id
+      mode = grab-decoration; carry its id; setPointerCapture
     else:
-      mode = existing paint / dirt-spot dispatch (unchanged)
+      mode = existing dispatch, now with a decoration branch (step 5)
+  pointerUp():
+    if grab-decoration mode and release point is inside palette decoration section:
+      removeDecoration; fire removal cue
+    clear grab state; stopPropagation so trailing click doesn't also fire dropAt
   ```
-- **Patterns to follow:** `rectFraction` for coordinate conversion; `MIN_DRAG_PX`/`DRAG_SAMPLE_MS` throttling; the `commit(updater, cue)` helper.
+- **Patterns to follow:** `rectFraction` for coordinate conversion; `MIN_DRAG_PX`/`DRAG_SAMPLE_MS` throttling; the `commit(updater, cue)` helper; `handleDirtSpotClick`'s `e.stopPropagation()` pattern (step 4).
 - **Test scenarios:**
-  - Happy path: pointer-down on an empty area with the decoration tool selected still places a new decoration (unchanged behavior).
+  - Happy path: pointer-down on an empty area with an unlocked decoration type selected places that decoration (extends the existing dispatch).
   - Happy path: pointer-down within grab radius of a placed decoration, then pointer-move, repositions that decoration without creating a new one.
   - Edge case: two decorations overlap at the pointer-down point; the nearer one grabs.
-  - Happy path: dragging a grabbed decoration onto the palette's decoration section and releasing removes it.
+  - Happy path: dragging a grabbed decoration onto the palette's decoration section and releasing removes it and fires the removal cue.
   - Edge case: a tap (below `MIN_DRAG_PX`) on a placed decoration does not move or remove it.
-- **Verification:** New `pointerDown`→`pointerMove`→`pointerUp` sequence tests pass; existing single-`click` interaction tests remain unaffected.
+  - Edge case: a full `pointerdown` → `pointermove` → `pointerup` grab-and-move sequence does not also trigger a duplicate placement via `handleTankClick`.
+  - Edge case: dragging a decoration to/past the tank's edge clamps its position rather than releasing it out of bounds.
+  - Edge case: attempting to place a decoration type at its per-type cap fires the refusal cue and does not add a decoration.
+- **Verification:** New `pointerDown`→`pointerMove`→`pointerUp` sequence tests pass, including the click-suppression and out-of-bounds cases; existing single-`click` interaction tests remain unaffected.
 
 ### U5. Decoration rendering, palette, and unlock feedback
 
-- **Goal:** Render placed decorations and the decoration palette section, and give unlocking a perceptible, distinguishable cue.
-- **Requirements:** R1, R7
+- **Goal:** Render placed decorations and the decoration palette section, and give unlocking, refusal, and removal each a perceptible, distinguishable cue.
+- **Requirements:** R1, R6, R7
 - **Dependencies:** U3, U4
 - **Files:**
   - `pages/aquarium/index.jsx`
@@ -227,14 +238,18 @@ flowchart TB
   - `lib/aquarium/sound.js`
 - **Approach:**
   1. Render each entry in `tank.decorations` as an absolutely-positioned `<button>` (interactive/grabbable, matching `.dirtSpot`'s pattern rather than `.foodDrop`'s `pointer-events: none` one), centered via `translate(-50%, -50%)`, `left`/`top` as `%` from the same 0..1 space.
-  2. Add a decoration section to the tool palette that stays hidden while `unlockedDecorationTypes` is empty and reveals as items unlock (KTD6).
-  3. Add a `'unlock'` entry to `TONES` in `sound.js`; on an unlock-threshold crossing (from U3), fire the existing `pulse` + `spawnEffect` + `commit(..., 'unlock')` triple on the newly revealed palette icon (KTD7).
-- **Patterns to follow:** `.dirtSpot`/`.foodDrop` CSS rules in `index.module.css`; `TONES` entries in `sound.js`; the `pulse`/`spawnEffect` helpers already in `index.jsx`.
+  2. Add a decoration section to the tool palette, appended after the existing toy section, that stays hidden while `unlockedDecorationTypes` is empty and reveals as items unlock (KTD6).
+  3. Add a `'unlock'` entry to `TONES` in `sound.js`; on an unlock-threshold crossing (from U3), fire the sound plus a palette-scoped highlight class on the newly revealed icon — a new, palette-local mechanism, not the tank-relative `pulse`/`spawnEffect` helpers, which position against the tank's own bounding box and cannot target a palette element (KTD7).
+  4. Add a `'refused'` entry to `TONES`, distinct from `'unlock'`; when `isDecorationCapReached` blocks a placement attempt (U4 step 5), fire this cue plus a brief shake/fade at the attempted drop point, so a refusal is never silent (KTD3).
+  5. Add a removal cue distinct from `'unlock'` (reuse the existing `sparkle` cue family) that fires when `removeDecoration` runs from a drag-to-palette release (U4 step 4), so removal doesn't read as a reward.
+- **Patterns to follow:** `.dirtSpot`/`.foodDrop` CSS rules in `index.module.css`; `TONES` entries in `sound.js`; the `pulse`/`spawnEffect` helpers already in `index.jsx` (for placed-decoration feedback only, not the palette icon — see step 3).
 - **Test scenarios:**
   - Happy path: a placed decoration renders at its `x`/`y` position.
-  - Happy path: the decoration palette section is absent when no types are unlocked, and shows the unlocked types otherwise.
-  - Integration: crossing the decoration-unlock threshold triggers the pulse/effect/sound sequence on the palette.
-- **Verification:** New rendering tests pass; the palette shows/hides correctly across the empty-to-unlocked transition.
+  - Happy path: the decoration palette section is absent when no types are unlocked, appears after the toy section otherwise.
+  - Integration: crossing the decoration-unlock threshold triggers the palette-icon highlight and sound.
+  - Integration: a cap-refused placement attempt fires the refusal cue, distinguishable from the unlock cue.
+  - Integration: removing a decoration fires the removal cue, distinguishable from the unlock cue.
+- **Verification:** New rendering tests pass; the palette shows/hides correctly across the empty-to-unlocked transition; refusal and removal cues are audibly/visibly distinct from unlock.
 
 ---
 
@@ -250,6 +265,6 @@ flowchart TB
 ## Definition of Done
 
 - All five units land; `npm test` and `npm run lint` pass clean.
-- A manual smoke pass in the dev server confirms existing aquarium behavior (feeding, playing, wiping dirt spots, egg hatching) is unaffected.
+- A manual smoke pass in the dev server (or on a touch device) confirms existing aquarium behavior (feeding, playing, wiping dirt spots, egg hatching) is unaffected, and specifically exercises grab-and-move, drag-to-remove, and cap-refusal — the cases jsdom's `fireEvent` can't fully simulate.
 - Every feature-bearing unit's test scenarios pass.
 - No dead-end code remains from exploring KTD1's entity-shape decision, if an alternative was tried during implementation.
