@@ -3,9 +3,7 @@ import PropTypes from 'prop-types';
 import { useDoodleObjects } from '../../lib/useDoodleObjects';
 import { createDoodleSound } from '../../lib/doodleSound';
 import { clamp } from '../../lib/random';
-import {
-  MIN_SIZE, MAX_SIZE, DEFAULT_DRIFT_MIN, DEFAULT_DRIFT_MAX,
-} from '../../lib/doodleShapes';
+import { MIN_SIZE, MAX_SIZE } from '../../lib/doodleShapes';
 import {
   spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles, COLLISION_BURST_MAX_AGE,
   DEFAULT_MAX_PARTICLES, DEFAULT_DUST_MAX_AGE,
@@ -32,12 +30,17 @@ const DUST_VELOCITY_THRESHOLD = 5; // px/s below which a shape is considered sta
 // effects. Throttled by tuning.dustFrameInterval, defaulting to roughly 1 in
 // 3 frames. All of these are user-adjustable via the tuning panel (see
 // TuningPanel.jsx) rather than fixed constants — see doodle.md conventions.
+// driftMin/driftMax here are the app's chosen good-feel defaults, not
+// doodleShapes' DEFAULT_DRIFT_MIN/DEFAULT_DRIFT_MAX (which stay 18/18 so
+// library-level rng-parity tests are unaffected by this choice) — a real
+// spread (some shapes drift slower, some faster) is what the tuning panel
+// is for.
 const DEFAULT_TUNING = {
   maxParticles: DEFAULT_MAX_PARTICLES,
   dustMaxAge: DEFAULT_DUST_MAX_AGE,
-  dustFrameInterval: 3,
-  driftMin: DEFAULT_DRIFT_MIN,
-  driftMax: DEFAULT_DRIFT_MAX,
+  dustFrameInterval: 30,
+  driftMin: 20,
+  driftMax: 100,
 };
 
 export default function DoodleCanvas({ rng, sound }) {
@@ -178,7 +181,16 @@ export default function DoodleCanvas({ rng, sound }) {
             if (o.kind !== 'shape') return;
             const speed = Math.hypot(o.vx, o.vy);
             if (speed > DUST_VELOCITY_THRESHOLD) {
-              dust.push(...spawnDust(o.x, o.y, o.vx, o.vy, o.color, tuningRef.current.dustMaxAge));
+              // Spawn at the trailing edge (the point on the shape's own
+              // outline farthest behind its direction of travel), not the
+              // center — a large, slow-drifting shape otherwise covers its
+              // own dust and drifts past it only after the dust has already
+              // faded out.
+              const angle = Math.atan2(o.vy, o.vx);
+              const radius = o.size / 2;
+              const backX = o.x - Math.cos(angle) * radius;
+              const backY = o.y - Math.sin(angle) * radius;
+              dust.push(...spawnDust(backX, backY, o.vx, o.vy, o.color, tuningRef.current.dustMaxAge));
             }
           });
           addParticles(dust);

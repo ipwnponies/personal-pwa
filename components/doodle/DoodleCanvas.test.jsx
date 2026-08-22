@@ -671,17 +671,21 @@ describe('DoodleCanvas', () => {
 
   it('bouncing different-color shapes spawns a spark burst and keeps both shapes', () => {
     const sound = mockSound();
-    // Two spawns, 6 rng draws each: [angle, shapeType, color, rotation, size, note].
-    // Color draw 0 -> COLORS[0]; color draw 0.2 -> COLORS[1] (different).
-    // shapeType draw 0 -> SHAPE_TYPES[0] ('circle') for a; shapeType draw 0.3
-    // -> SHAPE_TYPES[1] ('square') for b — deliberately different so this
-    // pair shares neither color nor shapeType (merge would otherwise fire
-    // under the new "same color OR same shapeType" rule).
-    // b's angle draw (index 6) is 0.5 -> angle=pi -> b drifts toward a (-x)
-    // while a drifts toward b (+x, angle 0): a genuine closing velocity, so
-    // the collision produces a real impulse and fires a bounce event (a
-    // bounce event only fires when velAlongNormal < 0 — see Fix 3).
-    const rng = seq([0, 0, 0, 0, 0, 0, 0.5, 0.3, 0.2, 0, 0, 0]);
+    // Two spawns, 7 rng draws each: [angle, speed, shapeType, color,
+    // rotation, size, note] — the tuning panel's default driftMin/driftMax
+    // (20/100) differ, so createShape always draws a speed value (see
+    // driftSpeed in doodleShapes.js), unlike the degenerate default-range
+    // case used by lib-level tests.
+    // a: angle=0 (drifts +x, toward b), shapeType draw 0 -> 'circle', color
+    // draw 0 -> COLORS[0].
+    // b: angle draw 0.5 -> angle=pi (drifts -x, toward a — a genuine closing
+    // velocity, so the collision produces a real impulse and fires a bounce
+    // event; a bounce event only fires when velAlongNormal < 0 — see Fix 3),
+    // shapeType draw 0.3 -> 'square' (different from a), color draw 0.2 ->
+    // COLORS[1] (different from a) — so this pair shares neither color nor
+    // shapeType (merge would otherwise fire under the "same color OR same
+    // shapeType" rule).
+    const rng = seq([0, 0, 0, 0, 0, 0, 0, 0.5, 0, 0.3, 0.2, 0, 0, 0]);
     const { cbs, rectSpy, nowSpy } = driveOneFrame();
     const { container } = render(<DoodleCanvas rng={rng} sound={sound} />);
     const svg = stage(container);
