@@ -87,6 +87,67 @@ describe('useDoodleObjects', () => {
     expect(afterB.x).toBe(200);
   });
 
+  it('advance resolves collisions between overlapping shapes and returns events', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    let a;
+    let b;
+    act(() => { a = result.current.spawnShape(100, 100); });
+    act(() => { b = result.current.spawnShape(105, 100); }); // overlapping, same rng -> same color
+    // dt=0 makes the drift step a no-op, isolating collision resolution from drift.
+    let events;
+    act(() => { events = result.current.advance(0, { width: 1000, height: 1000 }, null); });
+    expect(events.length).toBeGreaterThan(0);
+    // same color (both spawned with the same rng sequence) -> merge -> one fewer shape
+    const ids = [a.id, b.id];
+    const survivingOriginals = result.current.objects.filter((o) => ids.includes(o.id));
+    expect(survivingOriginals.length).toBeLessThan(2);
+  });
+
+  it('advance preserves stroke/shape interleave order for untouched objects', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(0, 0); });
+    let strokeId;
+    act(() => { strokeId = result.current.startStroke(500, 500); });
+    act(() => result.current.advance(0.01, { width: 1000, height: 1000 }, null));
+    const order = result.current.objects.map((o) => o.id);
+    expect(order).toEqual([shape.id, strokeId]);
+  });
+
+  it('advance does not merge a grabbed shape into a same-color overlap, but still bounces it', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    let a;
+    let b;
+    act(() => { a = result.current.spawnShape(100, 100); });
+    act(() => { b = result.current.spawnShape(105, 100); }); // overlapping, same color
+    // Force b to be approaching a (velAlongNormal < 0) so a real impulse fires,
+    // deterministically exercising the bounce-not-merge path regardless of the
+    // spawn-time drift velocity the rng happened to produce.
+    act(() => {
+      const bObj = result.current.objects.find((o) => o.id === b.id);
+      bObj.vx = -50;
+      bObj.vy = 0;
+    });
+    // Advance with a as the grabbed shape (being dragged by user)
+    let events;
+    act(() => { events = result.current.advance(0, { width: 1000, height: 1000 }, new Set([a.id])); });
+    // The grabbed shape's id must still exist; it should NOT have merged away
+    const shapeIds = new Set(result.current.objects.filter((o) => o.kind === 'shape').map((o) => o.id));
+    expect(shapeIds.has(a.id)).toBe(true);
+    expect(shapeIds.has(b.id)).toBe(true);
+    // The grabbed shape's position must be exactly where moveShape/spawnShape put
+    // it — restored after collision resolution, not left wherever physics moved it.
+    const afterA = result.current.objects.find((o) => o.id === a.id);
+    expect(afterA.x).toBe(100);
+    expect(afterA.y).toBe(100);
+    // Dragging into another shape must still produce a physics reaction — the
+    // other shape bounces off the grabbed one instead of the collision being
+    // silently ignored.
+    expect(events.some((e) => e.type === 'bounce')).toBe(true);
+    const afterB = result.current.objects.find((o) => o.id === b.id);
+    expect(afterB.vx).not.toBe(-50); // b's velocity actually changed (impulse applied)
+  });
+
   it('transformShape updates size and rotation on the matching shape', () => {
     const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
     let shape;

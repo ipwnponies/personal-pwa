@@ -32,6 +32,18 @@ const stage = (container) => container.querySelector('svg');
 const shapeGroups = (container) => container.querySelectorAll('svg > g[data-id]');
 const strokes = (container) => container.querySelectorAll('polyline');
 
+const driveOneFrame = () => {
+  const cbs = [];
+  vi.stubGlobal('requestAnimationFrame', (cb) => { cbs.push(cb); return cbs.length; });
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+  const rect = {
+    width: 1000, height: 1000, left: 0, top: 0, right: 1000, bottom: 1000, x: 0, y: 0, toJSON: () => ({}),
+  };
+  const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect);
+  const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(0);
+  return { cbs, rectSpy, nowSpy };
+};
+
 describe('DoodleCanvas', () => {
   it('tap on empty space spawns one shape and plays a note', () => {
     const sound = mockSound();
@@ -108,6 +120,17 @@ describe('DoodleCanvas', () => {
     expect(sound.playNote).toHaveBeenCalledTimes(1);
   });
 
+  it('single tap on a shape spawns a squash poof', () => {
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    expect(container.querySelectorAll('circle[cx]').length).toBeGreaterThan(0);
+  });
+
   it('double tap on a shape pops it', () => {
     const sound = mockSound();
     // rng high so the spawned shape is large enough to split.
@@ -126,6 +149,21 @@ describe('DoodleCanvas', () => {
     expect(shapeGroups(container).length).toBeGreaterThanOrEqual(3);
   });
 
+  it('double tap pop spawns a spark burst in addition to child scatter', () => {
+    const sound = mockSound();
+    const { container } = render(<DoodleCanvas rng={seq([0.99])} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 3 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 3 });
+    expect(sound.playPop).toHaveBeenCalledTimes(1);
+    expect(container.querySelectorAll('line').length).toBeGreaterThan(0);
+  });
+
   it('clear button empties the canvas', () => {
     const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
     const svg = stage(container);
@@ -142,6 +180,13 @@ describe('DoodleCanvas', () => {
     fireEvent.click(getByLabelText('Mute'));
     expect(getByLabelText('Unmute')).toBeTruthy();
     expect(sound.setMuted).toHaveBeenCalledWith(true);
+  });
+
+  it('trails toggle button flips its label and persists the preference', () => {
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Disable trails'));
+    expect(getByLabelText('Enable trails')).toBeTruthy();
+    expect(localStorage.getItem('doodle-trails')).toBe('false');
   });
 
   it('runs a drift loop that moves shapes over time', () => {
@@ -619,6 +664,236 @@ describe('DoodleCanvas', () => {
 
     const after = container.querySelector(`[data-id="${id}"]`).getAttribute('transform');
     expect(after).toBe(before); // held still by the drag, not drifted
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('bouncing different-color shapes spawns a spark burst and keeps both shapes', () => {
+    const sound = mockSound();
+    // Two spawns, 7 rng draws each: [angle, speed, shapeType, color,
+    // rotation, size, note] — the tuning panel's default driftMin/driftMax
+    // (20/100) differ, so createShape always draws a speed value (see
+    // driftSpeed in doodleShapes.js), unlike the degenerate default-range
+    // case used by lib-level tests.
+    // a: angle=0 (drifts +x, toward b), shapeType draw 0 -> 'circle', color
+    // draw 0 -> COLORS[0].
+    // b: angle draw 0.5 -> angle=pi (drifts -x, toward a — a genuine closing
+    // velocity, so the collision produces a real impulse and fires a bounce
+    // event; a bounce event only fires when velAlongNormal < 0 — see Fix 3),
+    // shapeType draw 0.3 -> 'square' (different from a), color draw 0.2 ->
+    // COLORS[1] (different from a) — so this pair shares neither color nor
+    // shapeType (merge would otherwise fire under the "same color OR same
+    // shapeType" rule).
+    const rng = seq([0, 0, 0, 0, 0, 0, 0, 0.5, 0, 0.3, 0.2, 0, 0, 0]);
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={rng} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerDown(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    expect(shapeGroups(container)).toHaveLength(2);
+
+    act(() => { cbs[cbs.length - 1](16); });
+
+    expect(shapeGroups(container)).toHaveLength(2); // no merge
+    expect(container.querySelectorAll('line').length).toBeGreaterThan(0); // spark burst
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('merging same-color shapes spawns spiral particles, plays a chime, and reduces shape count', () => {
+    const sound = mockSound();
+    // Both spawns use color draw 0 -> COLORS[0] for both -> same color.
+    const rng = seq([0, 0, 0, 0, 0, 0]);
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={rng} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerDown(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    expect(shapeGroups(container)).toHaveLength(2);
+    sound.playNote.mockClear();
+
+    act(() => { cbs[cbs.length - 1](16); });
+
+    expect(shapeGroups(container)).toHaveLength(1); // merged
+    expect(container.querySelectorAll('circle[cx]').length).toBeGreaterThan(0); // spiral particles
+    expect(sound.playNote).toHaveBeenCalledTimes(1); // merge chime
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('never persists particles to localStorage, only shapes and strokes', () => {
+    vi.useFakeTimers();
+    const rng = seq([0, 0, 0, 0, 0, 0]); // both spawns same color -> triggers a merge + particles
+    const { cbs, rectSpy } = driveOneFrame();
+    const nowSpy = vi.spyOn(performance, 'now').mockReturnValue(0);
+    const { container } = render(<DoodleCanvas rng={rng} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerDown(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+
+    act(() => { cbs[cbs.length - 1](16); });
+    expect(container.querySelectorAll('circle[cx]').length).toBeGreaterThan(0); // particles did spawn
+    act(() => { vi.advanceTimersByTime(1000); }); // flush the persistence interval
+
+    const saved = JSON.parse(localStorage.getItem('doodle-objects'));
+    expect(saved.length).toBeGreaterThan(0);
+    saved.forEach((o) => expect(['shape', 'stroke']).toContain(o.kind));
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('moving shapes spawn a dust trail while trails are enabled', () => {
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    act(() => { cbs[cbs.length - 1](16); });
+
+    expect(container.querySelectorAll('circle[cx]').length).toBeGreaterThan(0);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('disabling trails stops new dust particles from spawning', () => {
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Disable trails'));
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    act(() => { cbs[cbs.length - 1](16); });
+
+    expect(container.querySelectorAll('circle[cx]').length).toBe(0);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('dragging a shape still spawns a dust trail (grabbed shape is not skipped)', () => {
+    // Fix 2 regression: the drift-loop dust pass used to explicitly skip
+    // `o.id === grabbed`, so dragging a shape produced no dust at all.
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+
+    // Start dragging the shape (mode becomes 'drag', so it's the grabbed one
+    // for the frame driven below).
+    fireEvent.pointerDown(g, { clientX: 500, clientY: 500, pointerId: 2 });
+    fireEvent.pointerMove(svg, { clientX: 560, clientY: 500, pointerId: 2 });
+
+    act(() => { cbs[cbs.length - 1](16); });
+
+    expect(container.querySelectorAll('circle[cx]').length).toBeGreaterThan(0);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('tuning panel is closed by default and opens on toggle', () => {
+    const { container, getByLabelText, queryByRole } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    expect(queryByRole('dialog', { name: 'Tuning settings' })).toBeNull();
+    fireEvent.click(getByLabelText('Open tuning panel'));
+    expect(queryByRole('dialog', { name: 'Tuning settings' })).toBeTruthy();
+    fireEvent.click(getByLabelText('Close tuning panel'));
+    expect(queryByRole('dialog', { name: 'Tuning settings' })).toBeNull();
+    void container;
+  });
+
+  it('changing a tuning value persists it to localStorage under doodle-tuning', () => {
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Open tuning panel'));
+    fireEvent.change(getByLabelText('Max particles'), { target: { value: '400' } });
+    const stored = JSON.parse(localStorage.getItem('doodle-tuning'));
+    expect(stored.maxParticles).toBe(400);
+  });
+
+  it('reset to defaults restores the original tuning values', () => {
+    const { getByLabelText, getByText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Open tuning panel'));
+    fireEvent.change(getByLabelText('Max particles'), { target: { value: '400' } });
+    fireEvent.click(getByText('Reset to defaults'));
+    expect(getByLabelText('Max particles').value).toBe('150');
+  });
+
+  it('throttles dust spawning instead of spawning it on literally every frame', () => {
+    // Fix 4 regression: with DRIFT_SPEED (18px/s) always above
+    // DUST_VELOCITY_THRESHOLD (5px/s), dust used to spawn unconditionally
+    // every frame for every shape, starving the particle buffer's rarer
+    // merge-spiral/collision-spark effects.
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    act(() => { cbs[cbs.length - 1](16); }); // frame 1: dust spawns
+    const afterFirstFrame = container.querySelectorAll('circle[cx]').length;
+    expect(afterFirstFrame).toBeGreaterThan(0);
+
+    act(() => { cbs[cbs.length - 1](32); }); // frame 2: throttled — no new dust
+    const afterSecondFrame = container.querySelectorAll('circle[cx]').length;
+    expect(afterSecondFrame).toBe(afterFirstFrame); // unchanged: dust did not spawn every frame
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('interleaving pointer input with a live rAF loop does not drop stroke points', () => {
+    // Fix 1 regression: advance() used to call setObjects(nextArray) with a
+    // plain computed value instead of an updater function. React composes
+    // queued updater-function setState calls against each other, but a
+    // plain-value setState call REPLACES whatever is pending — so a
+    // pointermove-dispatched startStroke/appendStrokePoint update not yet
+    // committed when a rAF tick's advance() ran could be silently discarded.
+    //
+    // Each pointermove and the rAF tick that follows it are dispatched
+    // inside the SAME act() block (rather than letting each fireEvent flush
+    // on its own, as most other tests in this file do) so React batches them
+    // together — the tick's advance() call genuinely races the still-
+    // uncommitted stroke update, exactly the interleaving the bug depended
+    // on. Under the old plain-value setObjects, this reliably wiped the
+    // in-progress stroke entirely.
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+
+    fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 1 });
+
+    act(() => {
+      fireEvent.pointerMove(svg, { clientX: 60, clientY: 60, pointerId: 1 }); // starts the stroke
+      cbs[cbs.length - 1](16); // live rAF tick, still in the same batch
+    });
+
+    act(() => {
+      fireEvent.pointerMove(svg, { clientX: 90, clientY: 100, pointerId: 1 }); // continues the stroke
+      cbs[cbs.length - 1](32); // another live rAF tick, same batch
+    });
+
+    fireEvent.pointerUp(svg, { clientX: 90, clientY: 100, pointerId: 1 });
+
+    const polyline = strokes(container)[0];
+    expect(polyline).toBeTruthy();
+    const points = polyline.getAttribute('points').trim().split(/\s+/);
+    // start (10,10) + move to (60,60) + move to (90,100) = 3 accumulated points.
+    expect(points).toHaveLength(3);
 
     nowSpy.mockRestore();
     rectSpy.mockRestore();

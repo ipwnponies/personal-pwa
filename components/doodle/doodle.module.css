@@ -54,3 +54,53 @@
   50% { transform: scale(1.3); }
   100% { transform: scale(1); }
 }
+
+.tuningPanel {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  margin-top: 3.5rem; /* clears the toolbar row above it */
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  min-width: 220px;
+  z-index: 10;
+}
+
+.tuningHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: bold;
+}
+
+.tuningClose {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.tuningRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tuningRow input {
+  width: 5rem;
+}
+
+.tuningReset {
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.4rem;
+  cursor: pointer;
+}
