@@ -223,54 +223,213 @@ function ChoiceRow({ label, weightValue, totalWeight, onChangeLabel, onChangeWei
   );
 }
 
-function WeightedChoices() {
-  const [choices, setChoices] = useState(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const saved = localStorage.getItem('random-choices');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [result, setResult] = useState(null);
-  const mountedRef = useRef(false);
+// eslint-disable-next-line react/prop-types
+function GroupHeader({ groupName, isExpanded, onToggleExpand, onRename, onDelete }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(groupName);
+  const inputRef = useRef(null);
 
-  useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
-    localStorage.setItem('random-choices', JSON.stringify(choices));
-  }, [choices]);
+  const handleNameClick = () => {
+    setIsEditing(true);
+  };
 
-  const totalWeight = choices.reduce((sum, c) => sum + c.weight, 0);
-  const canPick = choices.filter((c) => c.label.trim()).length >= 2;
-
-  const [ghostKey, setGhostKey] = useState(0);
-
-  const handleGhostBlur = (e) => {
-    const label = e.target.value.trim();
-    if (label) {
-      setChoices((prev) => [...prev, { id: generateId(), label, weight: 1 }]);
-      setGhostKey((k) => k + 1);
+  const handleNameBlur = () => {
+    setIsEditing(false);
+    const trimmed = editValue.trim();
+    if (trimmed) {
+      setEditValue(trimmed);
+      onRename(trimmed);
+    } else {
+      setEditValue(groupName);
     }
   };
 
-  const handleChangeLabel = useCallback((id, label) => {
-    setChoices((prev) => prev.map((c) => (c.id === id ? { ...c, label } : c)));
+  const handleNameKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      handleNameBlur();
+    }
+  };
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isEditing]);
+
+  return (
+    <div className={styles.groupHeader}>
+      <button
+        type="button"
+        className={`${styles.groupExpandButton} ${isExpanded ? styles.groupExpanded : ''}`}
+        onClick={onToggleExpand}
+        disabled={isExpanded}
+        aria-label={isExpanded ? 'Expanded' : 'Expand group'}
+      >
+        ▼
+      </button>
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          type="text"
+          className={styles.groupNameInput}
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleNameBlur}
+          onKeyDown={handleNameKeyDown}
+        />
+      ) : (
+        <div
+          className={styles.groupNameDisplay}
+          onClick={handleNameClick}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') handleNameClick();
+          }}
+        >
+          {groupName}
+        </div>
+      )}
+      <button
+        type="button"
+        className={styles.groupDeleteButton}
+        onClick={onDelete}
+        aria-label="Delete group"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function WeightedChoices() {
+  const [groups, setGroups] = useState(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('random-choices');
+      if (!saved) {
+        return [{ id: generateId(), name: 'Default', choices: [] }];
+      }
+      const parsed = JSON.parse(saved);
+
+      // Migration: detect old flat structure (including an emptied-out flat list).
+      // The persistence effect below writes the migrated shape back on mount.
+      if (Array.isArray(parsed) && (parsed.length === 0 || ('weight' in parsed[0] && !('choices' in parsed[0])))) {
+        return [{ id: generateId(), name: 'Default', choices: parsed }];
+      }
+
+      return parsed;
+    } catch {
+      return [{ id: generateId(), name: 'Default', choices: [] }];
+    }
+  });
+
+  const [expandedGroupId, setExpandedGroupId] = useState(() => {
+    if (groups.length > 0) {
+      return groups[0].id;
+    }
+    return null;
+  });
+
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    localStorage.setItem('random-choices', JSON.stringify(groups));
+  }, [groups]);
+
+  const expandedGroup = groups.find((g) => g.id === expandedGroupId);
+  const expandedChoices = expandedGroup?.choices || [];
+  const totalWeight = expandedChoices.reduce((sum, c) => sum + c.weight, 0);
+  const canPick = expandedChoices.filter((c) => c.label.trim()).length >= 2;
+
+  const [ghostKeyChoice, setGhostKeyChoice] = useState(0);
+  const [ghostKeyGroup, setGhostKeyGroup] = useState(0);
+
+  const handleAddChoice = (e) => {
+    const label = e.target.value.trim();
+    if (label && expandedGroupId) {
+      setGroups((prev) =>
+        prev.map((g) =>
+          g.id === expandedGroupId
+            ? { ...g, choices: [...g.choices, { id: generateId(), label, weight: 1 }] }
+            : g,
+        ),
+      );
+      setGhostKeyChoice((k) => k + 1);
+    }
+  };
+
+  const handleAddGroup = (e) => {
+    const name = e.target.value.trim();
+    if (name) {
+      const newGroupId = generateId();
+      setGroups((prev) => [...prev, { id: newGroupId, name, choices: [] }]);
+      setExpandedGroupId(newGroupId);
+      setResult(null);
+      setGhostKeyGroup((k) => k + 1);
+    }
+  };
+
+  const updateGroupChoices = useCallback((groupId, updateChoices) => {
+    setGroups((prev) =>
+      prev.map((g) => (g.id === groupId ? { ...g, choices: updateChoices(g.choices) } : g)),
+    );
   }, []);
 
-  const handleChangeWeight = useCallback((id, weight) => {
-    setChoices((prev) => prev.map((c) => (c.id === id ? { ...c, weight } : c)));
+  const handleChangeLabel = useCallback(
+    (groupId, id, label) =>
+      updateGroupChoices(groupId, (choices) =>
+        choices.map((c) => (c.id === id ? { ...c, label } : c)),
+      ),
+    [updateGroupChoices],
+  );
+
+  const handleChangeWeight = useCallback(
+    (groupId, id, weight) =>
+      updateGroupChoices(groupId, (choices) =>
+        choices.map((c) => (c.id === id ? { ...c, weight } : c)),
+      ),
+    [updateGroupChoices],
+  );
+
+  const handleDeleteChoice = useCallback(
+    (groupId, id) => updateGroupChoices(groupId, (choices) => choices.filter((c) => c.id !== id)),
+    [updateGroupChoices],
+  );
+
+  const handleRenameGroup = useCallback((groupId, newName) => {
+    setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, name: newName } : g)));
   }, []);
 
-  const handleDelete = useCallback((id) => {
-    setChoices((prev) => prev.filter((c) => c.id !== id));
-  }, []);
+  const handleDeleteGroup = useCallback(
+    (groupId) => {
+      const remaining = groups.filter((g) => g.id !== groupId);
+      const newGroup = remaining.length === 0 ? { id: generateId(), name: 'Default', choices: [] } : null;
+
+      setGroups((prev) => {
+        const filtered = prev.filter((g) => g.id !== groupId);
+        return filtered.length === 0 ? [newGroup] : filtered;
+      });
+
+      if (newGroup) {
+        setExpandedGroupId(newGroup.id);
+        setResult(null);
+      } else if (expandedGroupId === groupId) {
+        // We deleted the expanded group, so switch to another and clear its result.
+        setExpandedGroupId(remaining[0].id);
+        setResult(null);
+      }
+    },
+    [groups, expandedGroupId],
+  );
+
+  const handleToggleGroup = (groupId) => {
+    setExpandedGroupId(groupId);
+    setResult(null);
+  };
 
   const handlePick = () => {
-    const valid = choices.filter((c) => c.label.trim());
+    const valid = expandedChoices.filter((c) => c.label.trim());
     if (valid.length < 2) return;
     const chosen = weightedRandomChoice(valid);
     const validTotal = valid.reduce((sum, c) => sum + c.weight, 0);
@@ -282,26 +441,55 @@ function WeightedChoices() {
 
   return (
     <div className={styles.container}>
-      <div className={styles.choicesList}>
-        {choices.map((choice) => (
-          <ChoiceRow
-            key={choice.id}
-            label={choice.label}
-            weightValue={choice.weight}
-            totalWeight={totalWeight}
-            onChangeLabel={(l) => handleChangeLabel(choice.id, l)}
-            onChangeWeight={(w) => handleChangeWeight(choice.id, w)}
-            onDelete={() => handleDelete(choice.id)}
-          />
-        ))}
-        <div className={styles.choiceRow}>
+      <div className={styles.groupsList}>
+        {groups.map((group) => {
+          const isExpanded = expandedGroupId === group.id;
+          return (
+            <div key={group.id} className={styles.groupContainer}>
+              <GroupHeader
+                groupName={group.name}
+                isExpanded={isExpanded}
+                onToggleExpand={() => handleToggleGroup(group.id)}
+                onRename={(newName) => handleRenameGroup(group.id, newName)}
+                onDelete={() => handleDeleteGroup(group.id)}
+              />
+              {isExpanded && (
+                <div className={styles.choicesList}>
+                  {group.choices.map((choice) => (
+                    <ChoiceRow
+                      key={choice.id}
+                      label={choice.label}
+                      weightValue={choice.weight}
+                      totalWeight={totalWeight}
+                      onChangeLabel={(l) => handleChangeLabel(group.id, choice.id, l)}
+                      onChangeWeight={(w) => handleChangeWeight(group.id, choice.id, w)}
+                      onDelete={() => handleDeleteChoice(group.id, choice.id)}
+                    />
+                  ))}
+                  <div className={styles.choiceRow}>
+                    <input
+                      key={ghostKeyChoice}
+                      type="text"
+                      className={`${styles.choiceLabelInput} ${styles.choiceGhost}`}
+                      defaultValue=""
+                      onBlur={handleAddChoice}
+                      placeholder="Add choice..."
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div className={styles.groupRow}>
           <input
-            key={ghostKey}
+            key={ghostKeyGroup}
             type="text"
             className={`${styles.choiceLabelInput} ${styles.choiceGhost}`}
             defaultValue=""
-            onBlur={handleGhostBlur}
-            placeholder="Add choice..."
+            onBlur={handleAddGroup}
+            placeholder="Add group..."
           />
         </div>
       </div>
