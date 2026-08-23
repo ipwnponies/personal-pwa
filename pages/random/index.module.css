@@ -216,12 +216,118 @@
   font-size: 1.1rem;
 }
 
+/* Groups container */
+.groupsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.groupContainer {
+  border-radius: 12px;
+  overflow: hidden;
+  background: #2a2a3d;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  gap: 12px;
+  background: #2a2a3d;
+  border-bottom: 1px solid #3a3a5a;
+}
+
+.groupExpandButton {
+  background: none;
+  border: none;
+  color: #4fc3f7;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  transition: transform 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.groupExpandButton.groupExpanded {
+  transform: rotate(0deg);
+}
+
+.groupExpandButton:not(.groupExpanded) {
+  transform: rotate(-90deg);
+}
+
+.groupNameDisplay {
+  flex: 1;
+  color: #e0e0e0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 8px 4px;
+  user-select: none;
+}
+
+.groupNameDisplay:hover {
+  color: #4fc3f7;
+}
+
+.groupNameInput {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #4fc3f7;
+  color: #e0e0e0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 8px 4px;
+}
+
+.groupNameInput:focus {
+  outline: none;
+  color: #81d4fa;
+}
+
+.groupDeleteButton {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: none;
+  border: 1px solid #444;
+  color: #888;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.groupDeleteButton:hover {
+  border-color: #666;
+  color: #ccc;
+}
+
+.groupRow {
+  display: flex;
+  align-items: center;
+  background: #2a2a3d;
+  padding: 12px 16px;
+  min-height: 56px;
+  gap: 8px;
+  border-radius: 12px;
+  border: 1px dashed #3a3a5a;
+}
+
 /* Weighted Choices */
 .choicesList {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  border-radius: 12px;
+  background: #2a2a3d;
   overflow: hidden;
 }
 
@@ -232,6 +338,11 @@
   padding: 12px 16px;
   min-height: 56px;
   gap: 8px;
+  border-top: 1px solid #1a1a2e;
+}
+
+.choiceRow:first-child {
+  border-top: none;
 }
 
 .choiceLabelInput {
@@ -252,6 +363,10 @@
 
 .choiceGhost {
   opacity: 0.5;
+}
+
+.choiceGhost:focus {
+  opacity: 1;
 }
 
 .choiceWeightInput {
@@ -357,7 +472,7 @@
     grid-row: 2;
   }
 
-  .choicesList {
+  .groupsList {
     grid-column: 1;
     grid-row: 1 / 3;
   }
