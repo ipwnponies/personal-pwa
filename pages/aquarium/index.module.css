@@ -50,6 +50,10 @@
   animation: pulse 0.65s ease-in-out;
 }
 
+.unlockHighlight {
+  animation: unlockGlow 1.5s ease-in-out;
+}
+
 .wantBubble {
   position: absolute;
   top: -14px;
@@ -99,16 +103,34 @@
   filter: opacity(0.75);
 }
 
+.decoration {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: none;
+  background: none;
+  font-size: 30px;
+  cursor: pointer;
+}
+
 .palette {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-around;
+  gap: 0.75rem;
   padding: 0.75rem;
   background: #04202f;
+}
+
+.decorationPalette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .tool {
   width: 4.5rem;
   height: 4.5rem;
+  flex-shrink: 0;
   border-radius: 1rem;
   border: 3px solid transparent;
   background: rgba(255, 255, 255, 0.12);
@@ -125,6 +147,12 @@
   0% { transform: translate(-50%, -50%) scale(1); filter: brightness(1); }
   40% { transform: translate(-50%, -50%) scale(1.35); filter: brightness(1.5); }
   100% { transform: translate(-50%, -50%) scale(1); filter: brightness(1); }
+}
+
+@keyframes unlockGlow {
+  0% { box-shadow: 0 0 0 rgba(255, 213, 74, 0); }
+  30% { box-shadow: 0 0 18px rgba(255, 213, 74, 0.9); }
+  100% { box-shadow: 0 0 0 rgba(255, 213, 74, 0); }
 }
 
 @keyframes effectPop {

@@ -37,3 +37,6 @@ yarn-error.log*
 
 # superpowers subagent-driven-development scratch workspace
 /.superpowers/
+
+# git worktrees used for isolated feature work
+/.worktrees/
