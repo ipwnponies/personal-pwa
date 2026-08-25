@@ -19,17 +19,27 @@ import {
   MET_THRESHOLD,
   NEED_FLOOR,
   NEED_MAX,
+  isDecorationCapReached,
+  placeDecoration,
+  moveDecoration,
+  removeDecoration,
 } from '../../lib/aquarium/simulation';
 import { createMovementState, stepMovement, wobbleOffset, CONTACT_RADIUS } from '../../lib/aquarium/movement';
 import { createSound } from '../../lib/aquarium/sound';
+import { getDecorationType } from '../../lib/aquarium/decorations';
 
 const TICK_MS = 2000;
 const DRAG_SAMPLE_MS = 120;
 const PULSE_MS = 650;
 const EFFECT_MS = 900;
+const UNLOCK_HIGHLIGHT_MS = 1500;
 // Touch jitter on a stationary tap can still fire a pointermove; require real
 // movement before treating a press as a drag, so a tap never double-acts.
 const MIN_DRAG_PX = 12;
+// Sibling to movement.js's CONTACT_RADIUS, but scoped to this page since
+// decorations aren't a movement/fish concept — a preschooler's imprecise tap
+// still grabs the item.
+const GRAB_RADIUS = 0.06;
 
 const TOOLS = [
   { key: 'food', label: 'Food', emoji: '🍤', effect: '🍤' },
@@ -65,14 +75,32 @@ const rectFraction = (el, clientX, clientY) => {
   };
 };
 
+// Nearest decoration to (x, y) within radius, or null. On overlap the
+// nearer one wins.
+const nearestDecorationAt = (decorations, x, y, radius) =>
+  decorations.reduce((nearest, d) => {
+    const dist = Math.hypot(d.x - x, d.y - y);
+    if (dist > radius) return nearest;
+    if (!nearest || dist < nearest.dist) return { decoration: d, dist };
+    return nearest;
+  }, null);
+
 export default function Aquarium() {
   const { basePath } = useRouter();
   const [tank, setTank] = useState(null);
   const [pulsingIds, setPulsingIds] = useState(() => new Set());
   const [effects, setEffects] = useState([]);
+  const [unlockHighlightKey, setUnlockHighlightKey] = useState(null);
   const soundRef = useRef(null);
   const tankRef = useRef(null);
+  const decorationPaletteRef = useRef(null);
   const dragRef = useRef({ active: false, lastSample: 0 });
+  const suppressClickRef = useRef(false);
+  // Pointers rejected by handleTankPointerDown (a second concurrent touch)
+  // while another gesture owns dragRef — tracked so it's each ignored
+  // pointer's own eventual release, not its touch-down, that suppresses its
+  // trailing click (see handleTankPointerUp).
+  const ignoredPointersRef = useRef(new Set());
   const moveStatesRef = useRef(new Map());
 
   // Mount: load, catch up offline decay, wire sound.
@@ -134,6 +162,16 @@ export default function Aquarium() {
     }, EFFECT_MS);
   };
 
+  // Brief glow on the newly revealed palette icon (KTD7) — palette-local,
+  // not the tank-relative pulse/spawnEffect, which target the tank's own
+  // bounding box and can't address a palette element.
+  const flashUnlock = (key) => {
+    setUnlockHighlightKey(key);
+    setTimeout(() => {
+      setUnlockHighlightKey((current) => (current === key ? null : current));
+    }, UNLOCK_HIGHLIGHT_MS);
+  };
+
   // requestAnimationFrame movement loop: steers each fish toward its claimed
   // drop (or idle wander), consuming a drop on contact. Position updates every
   // frame in React state; only the existing 2s tick (above) writes to storage.
@@ -149,6 +187,7 @@ export default function Aquarium() {
         : 1;
       const now = Date.now();
       const events = [];
+      let unlockedThisFrame = null;
       setTank((prev) => {
         if (!prev) return prev;
         const claimed = assignSeekTargets(prev);
@@ -180,7 +219,11 @@ export default function Aquarium() {
         });
         let next = { ...claimed, creatures: positioned };
         events.forEach((ev) => {
+          const before = next.unlockedDecorationTypes.length;
           next = consumeDrop(next, ev.creatureId, ev.dropId);
+          if (next.unlockedDecorationTypes.length > before) {
+            unlockedThisFrame = next.unlockedDecorationTypes[next.unlockedDecorationTypes.length - 1];
+          }
         });
         return next;
       });
@@ -189,6 +232,10 @@ export default function Aquarium() {
         spawnEffect(ev.x, ev.y, ev.dropType === 'food' ? '🍤' : '💗');
         if (soundRef.current) soundRef.current.play(ev.dropType === 'food' ? 'nom' : 'pop');
       });
+      if (unlockedThisFrame) {
+        flashUnlock(unlockedThisFrame);
+        if (soundRef.current) soundRef.current.play('unlock');
+      }
       frameId = requestAnimationFrame(loop);
     };
     frameId = requestAnimationFrame(loop);
@@ -197,15 +244,33 @@ export default function Aquarium() {
   }, [tank !== null]);
 
   const dropAt = (x, y) => {
-    spawnEffect(x, y, TOOLS_BY_KEY[tank.selectedTool].effect);
-    if (tank.selectedTool === 'food') commit((prev) => dropFood(prev, x, y), 'pop');
-    else commit((prev) => dropToy(prev, x, y), 'pop');
+    const tool = TOOLS_BY_KEY[tank.selectedTool];
+    if (tool) {
+      spawnEffect(x, y, tool.effect);
+      commit(
+        (prev) => (tank.selectedTool === 'food' ? dropFood(prev, x, y) : dropToy(prev, x, y)),
+        'pop',
+      );
+      return;
+    }
+    if (isDecorationCapReached(tank, tank.selectedTool)) {
+      spawnEffect(x, y, '🚫');
+      if (soundRef.current) soundRef.current.play('refused');
+      return;
+    }
+    spawnEffect(x, y, getDecorationType(tank.selectedTool).emoji);
+    commit((prev) => placeDecoration(prev, tank.selectedTool, x, y), 'pop');
   };
 
   const wipeSpot = (id, x, y) => {
     pulse(id);
     spawnEffect(x, y, '✨');
-    commit((prev) => wipeDirtSpot(prev, id), 'sparkle');
+    const projected = wipeDirtSpot(tank, id);
+    const unlocked = projected.unlockedDecorationTypes.length > tank.unlockedDecorationTypes.length;
+    if (unlocked) {
+      flashUnlock(projected.unlockedDecorationTypes[projected.unlockedDecorationTypes.length - 1]);
+    }
+    commit((prev) => wipeDirtSpot(prev, id), unlocked ? 'unlock' : 'sparkle');
   };
 
   // Any tap inside the tank drops the selected tool's item at that point —
@@ -214,6 +279,10 @@ export default function Aquarium() {
   // onClick) so tapping a spot always wipes it instead of dropping.
   const handleTankClick = (e) => {
     if (!tank) return;
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
     const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
     dropAt(x, y);
   };
@@ -230,17 +299,71 @@ export default function Aquarium() {
   // handler of their own, so a drag that starts on top of one must still count
   // as a drag — matching handleTankClick, which already accepts taps anywhere.
   const handleTankPointerDown = (e) => {
+    if (!tank) return;
+    // dragRef tracks a single gesture, not one per pointerId — ignore a
+    // second concurrent pointer (e.g. a resting palm, or multi-touch) rather
+    // than letting it hijack the first pointer's in-progress drag/grab.
+    if (dragRef.current.active) {
+      // That ignored pointer still gets its own trailing click once it
+      // lifts — remember it so handleTankPointerUp can suppress that click
+      // when it actually happens. Setting suppressClickRef here instead
+      // (at touch-down) would hold it true for the ignored pointer's whole
+      // dwell time and could wrongly swallow the real gesture's own
+      // legitimate click if that fires first (e.g. a palm resting through
+      // an otherwise plain tap-to-drop).
+      ignoredPointersRef.current.add(e.pointerId);
+      return;
+    }
+    // Clear any stale suppression left by a pointercancel'd prior gesture
+    // (no trailing click follows a cancel, so the flag can otherwise get
+    // stuck true and silently swallow this new interaction's own click).
+    suppressClickRef.current = false;
+    const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+    const hit = nearestDecorationAt(tank.decorations, x, y, GRAB_RADIUS);
+    if (hit) {
+      // Pointer capture keeps pointermove/pointerup targeting the tank even
+      // once the pointer crosses into the (sibling, not nested) palette —
+      // without it, onPointerLeave clears drag state before a
+      // drag-to-remove release is ever observed (KTD4). Feature-detected
+      // rather than try/catch'd: jsdom simply lacks the method (the only
+      // known gap), and a real exception from a supported call should
+      // surface rather than being swallowed.
+      if (typeof tankRef.current.setPointerCapture === 'function') {
+        tankRef.current.setPointerCapture(e.pointerId);
+      }
+      dragRef.current = {
+        active: true,
+        dragging: false,
+        mode: 'decoration',
+        decorationId: hit.decoration.id,
+        pointerId: e.pointerId,
+        lastSample: 0,
+        startX: e.clientX,
+        startY: e.clientY,
+        refusalFired: false,
+      };
+      return;
+    }
     dragRef.current = {
       active: true,
       dragging: false,
+      mode: 'paint',
+      pointerId: e.pointerId,
       lastSample: 0,
       startX: e.clientX,
       startY: e.clientY,
+      refusalFired: false,
     };
   };
 
+  // Shared ownership check for the four handlers below: an up/move/cancel/
+  // leave from a pointer we never tracked (ignored at pointer-down because
+  // another gesture was already active) must not touch the in-progress
+  // gesture's state or coordinates.
+  const isActiveGesturePointer = (e) => dragRef.current.active && e.pointerId === dragRef.current.pointerId;
+
   const handleTankPointerMove = (e) => {
-    if (!tank || !dragRef.current.active) return;
+    if (!tank || !isActiveGesturePointer(e)) return;
     const drag = dragRef.current;
     if (!drag.dragging) {
       const moved = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
@@ -251,15 +374,76 @@ export default function Aquarium() {
     if (now - drag.lastSample < DRAG_SAMPLE_MS) return;
     drag.lastSample = now;
     const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+    if (drag.mode === 'decoration') {
+      commit((prev) => moveDecoration(prev, drag.decorationId, x, y), null);
+      return;
+    }
     const hit = typeof document.elementFromPoint === 'function'
       ? document.elementFromPoint(e.clientX, e.clientY)
       : null;
     const spotId = hit && hit.dataset ? hit.dataset.spotId : undefined;
-    if (spotId) wipeSpot(spotId, x, y);
-    else dropAt(x, y);
+    if (spotId) {
+      wipeSpot(spotId, x, y);
+      return;
+    }
+    // A cap-reached refusal cue is meant for one discrete tap attempt, not a
+    // continuous drag: once it has fired for this gesture, further throttled
+    // samples that would also hit the cap are dropped entirely rather than
+    // re-triggering the refusal cue/effect on every sample.
+    const tool = TOOLS_BY_KEY[tank.selectedTool];
+    if (!tool && isDecorationCapReached(tank, tank.selectedTool)) {
+      if (drag.refusalFired) return;
+      drag.refusalFired = true;
+    }
+    dropAt(x, y);
   };
 
-  const endTankDrag = () => {
+  const isPointInRect = (el, clientX, clientY) => {
+    const rect = el.getBoundingClientRect();
+    return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+  };
+
+  const handleTankPointerUp = (e) => {
+    // A previously-ignored second pointer releasing: suppress its own
+    // trailing click right here, at the moment it's actually about to fire,
+    // instead of for its whole dwell time (see handleTankPointerDown).
+    if (ignoredPointersRef.current.delete(e.pointerId)) {
+      suppressClickRef.current = true;
+      return;
+    }
+    if (!isActiveGesturePointer(e)) return;
+    const drag = dragRef.current;
+    if (drag.mode === 'decoration') {
+      suppressClickRef.current = true;
+      const overDecorationPalette = decorationPaletteRef.current
+        && isPointInRect(decorationPaletteRef.current, e.clientX, e.clientY);
+      if (overDecorationPalette) {
+        commit((prev) => removeDecoration(prev, drag.decorationId), 'sparkle');
+      }
+    }
+    dragRef.current = { active: false, lastSample: 0 };
+  };
+
+  // pointercancel means the gesture was ABORTED (scroll takeover, multi-touch,
+  // an incoming call, ...), not a real release — it can carry stale/last-known
+  // coordinates that happen to sit over the delete zone. Treating it like
+  // pointerup would silently delete a decoration mid-abort, so cancel only
+  // ever clears drag state and never checks the delete zone or removes
+  // anything (KTD3's no-punishment, no-surprise-loss design).
+  const handleTankPointerCancel = (e) => {
+    // No trailing click follows a cancel, so an ignored pointer cancelling
+    // just needs its tracked entry cleared, not a suppression.
+    ignoredPointersRef.current.delete(e.pointerId);
+    if (!isActiveGesturePointer(e)) return;
+    dragRef.current = { active: false, lastSample: 0 };
+  };
+
+  const handleTankPointerLeave = (e) => {
+    ignoredPointersRef.current.delete(e.pointerId);
+    if (!isActiveGesturePointer(e)) return;
+    // A decoration grab stays active through pointer capture (see
+    // handleTankPointerDown) — only a plain paint-drag ends on leave.
+    if (dragRef.current.mode === 'decoration') return;
     dragRef.current.active = false;
   };
 
@@ -309,9 +493,9 @@ export default function Aquarium() {
         onClick={handleTankClick}
         onPointerDown={handleTankPointerDown}
         onPointerMove={handleTankPointerMove}
-        onPointerUp={endTankDrag}
-        onPointerLeave={endTankDrag}
-        onPointerCancel={endTankDrag}
+        onPointerUp={handleTankPointerUp}
+        onPointerLeave={handleTankPointerLeave}
+        onPointerCancel={handleTankPointerCancel}
         role="presentation"
       >
         {tank.creatures.map((c) => {
