@@ -581,6 +581,20 @@ export default function Aquarium() {
           </button>
         ))}
 
+        {tank.decorations.map((d) => (
+          <button
+            type="button"
+            key={d.id}
+            data-testid="decoration"
+            className={styles.decoration}
+            style={{ left: `${d.x * 100}%`, top: `${d.y * 100}%` }}
+            aria-label={getDecorationType(d.type).name}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {getDecorationType(d.type).emoji}
+          </button>
+        ))}
+
         {effects.map((e) => (
           <span
             key={e.id}
@@ -618,6 +632,30 @@ export default function Aquarium() {
             <span aria-hidden="true">{tool.emoji}</span>
           </button>
         ))}
+        <div
+          className={styles.decorationPalette}
+          data-testid="decorationPalette"
+          ref={decorationPaletteRef}
+        >
+          {tank.unlockedDecorationTypes.map((key) => {
+            const deco = getDecorationType(key);
+            const classes = [styles.tool];
+            if (tank.selectedTool === key) classes.push(styles.selected);
+            if (unlockHighlightKey === key) classes.push(styles.unlockHighlight);
+            return (
+              <button
+                type="button"
+                key={key}
+                className={classes.join(' ')}
+                aria-pressed={tank.selectedTool === key}
+                aria-label={deco.name}
+                onClick={() => selectTool(key)}
+              >
+                <span aria-hidden="true">{deco.emoji}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
