@@ -23,6 +23,19 @@ const TUNING_KEY = 'doodle-tuning';
 const MAX_DT = 0.05; // clamp frame delta so a backgrounded tab doesn't jump
 const MAX_POINTERS = 10; // defensive ceiling, not a gameplay limit
 const PINCH_WINDOW_MS = 150; // two touches must land within this of each other to start a pinch
+// A second finger doesn't need to land on the shape itself — sausage fingers
+// make that nearly impossible on a small shape. It only needs to land within
+// this radius of the first finger's touch point.
+//
+// CSS px are a device-independent "reference pixel" fixed at 96px = 2.54cm
+// (the ratio holds regardless of a device's real pixel density — see
+// components/layout.jsx's `initial-scale=1, width=device-width` viewport
+// tag), so a physical distance converts to a screen-independent px radius
+// with no per-device adjustment needed. 10cm approximates a relaxed
+// thumb-to-middle-finger spread at touch-down — wide enough for one hand's
+// pinch, but not so wide it also swallows an unrelated touch nearby.
+const CSS_PX_PER_CM = 96 / 2.54;
+const PINCH_PARTNER_RADIUS = 10 * CSS_PX_PER_CM;
 const DUST_VELOCITY_THRESHOLD = 5; // px/s below which a shape is considered stationary
 // Every shape drifts at ~18px/s by default with no damping, so the velocity
 // threshold above is effectively always true — spawning dust every frame for
@@ -318,34 +331,47 @@ export default function DoodleCanvas({ rng, sound }) {
       return;
     }
 
-    if (shapeId) {
-      const partnerEntry = [...pointersRef.current.entries()].find(([, entry]) => (
-        entry.shapeId === shapeId && entry.mode === null && !entry.moved
-        && now - entry.downTime < PINCH_WINDOW_MS
-      ));
-      if (partnerEntry) {
-        const [partnerId, partner] = partnerEntry;
-        const shape = objectsRef.current.find((o) => o.id === shapeId);
-        if (!shape) return;
-        // Use the partner's live position, not its touchdown position — it may
-        // have drifted (up to MOVE_THRESHOLD) before the second finger landed.
-        const startDist = Math.max(Math.hypot(pt.x - partner.x, pt.y - partner.y), 1);
-        const startAngle = Math.atan2(pt.y - partner.y, pt.x - partner.x) * (180 / Math.PI);
-        pinchesRef.current.set(shapeId, {
-          pointerIds: [partnerId, e.pointerId],
-          startDist,
-          startAngle,
-          startSize: shape.size,
-          startRotation: shape.rotation,
-          sizeMultiplier: shape.sizeMultiplier || 1,
-        });
-        partner.mode = 'pinch-member';
-        partner.moved = true;
-        pointersRef.current.set(e.pointerId, {
-          pointerId: e.pointerId, mode: 'pinch-member', shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now,
-        });
-        return;
-      }
+    // The first finger targets the shape (must land on it); the second only
+    // needs to land near the first finger's touch point — its own target is
+    // irrelevant, so it can miss the shape entirely and still pinch it.
+    const partnerEntry = [...pointersRef.current.entries()].find(([, entry]) => (
+      entry.shapeId && entry.mode === null && !entry.moved
+      && now - entry.downTime < PINCH_WINDOW_MS
+      && Math.hypot(pt.x - entry.x, pt.y - entry.y) <= PINCH_PARTNER_RADIUS
+    ));
+    if (partnerEntry) {
+      const [partnerId, partner] = partnerEntry;
+      const pinchShapeId = partner.shapeId;
+      const shape = objectsRef.current.find((o) => o.id === pinchShapeId);
+      if (!shape) return;
+      // Use the partner's live position, not its touchdown position — it may
+      // have drifted (up to MOVE_THRESHOLD) before the second finger landed.
+      const startDist = Math.max(Math.hypot(pt.x - partner.x, pt.y - partner.y), 1);
+      const startAngle = Math.atan2(pt.y - partner.y, pt.x - partner.x) * (180 / Math.PI);
+      // The resize ceiling is the shape's own spawn/merge range only when the
+      // stage's real dimensions aren't available (e.g. unmocked in tests) —
+      // otherwise it's raised to fill the stage, since min(width, height) is
+      // the largest size advanceShape's bounce math can hold without jitter.
+      const rect = svgRef.current?.getBoundingClientRect();
+      const sizeMultiplier = shape.sizeMultiplier || 1;
+      const maxSize = rect && rect.width && rect.height
+        ? Math.min(rect.width, rect.height)
+        : MAX_SIZE * sizeMultiplier;
+      pinchesRef.current.set(pinchShapeId, {
+        pointerIds: [partnerId, e.pointerId],
+        startDist,
+        startAngle,
+        startSize: shape.size,
+        startRotation: shape.rotation,
+        sizeMultiplier,
+        maxSize,
+      });
+      partner.mode = 'pinch-member';
+      partner.moved = true;
+      pointersRef.current.set(e.pointerId, {
+        pointerId: e.pointerId, mode: 'pinch-member', shapeId: pinchShapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now,
+      });
+      return;
     }
 
     pointersRef.current.set(e.pointerId, {
@@ -371,15 +397,15 @@ export default function DoodleCanvas({ rng, sound }) {
       if (!a || !b) return;
       const liveDist = Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1);
       const liveAngle = Math.atan2(b.y - a.y, b.x - a.x) * (180 / Math.PI);
-      // MIN_SIZE/MAX_SIZE scale with the shape's own sizeMultiplier (a
-      // tablet-spawned 2x shape pinches within its own larger range, not the
-      // phone-scale range). MIN_SIZE*multiplier is the spawn floor, not a
-      // floor on every shape — popped shards routinely start below it. Never
-      // snap a shape up to that floor on the first pinch move; let it shrink
-      // further from wherever it already was.
+      // MIN_SIZE scales with the shape's own sizeMultiplier (a tablet-spawned
+      // 2x shape pinches within its own larger range, not the phone-scale
+      // range). MIN_SIZE*multiplier is the spawn floor, not a floor on every
+      // shape — popped shards routinely start below it. Never snap a shape up
+      // to that floor on the first pinch move; let it shrink further from
+      // wherever it already was. maxSize was resolved once at pinch-start
+      // (see onPointerDown) to the stage's own dimensions.
       const minSize = Math.min(MIN_SIZE * pinch.sizeMultiplier, pinch.startSize);
-      const maxSize = MAX_SIZE * pinch.sizeMultiplier;
-      const size = clamp(pinch.startSize * (liveDist / pinch.startDist), minSize, maxSize);
+      const size = clamp(pinch.startSize * (liveDist / pinch.startDist), minSize, pinch.maxSize);
       const rotation = pinch.startRotation + (liveAngle - pinch.startAngle);
       transformShape(p.shapeId, { size, rotation });
       return;

@@ -456,6 +456,70 @@ describe('DoodleCanvas', () => {
     widthSpy.mockRestore();
   });
 
+  it('pinch resize ceiling is raised to the stage size, not capped at MAX_SIZE', () => {
+    // rng=0.1 -> circle, spawn size 33.2 (see earlier tests for the derivation).
+    // Stage mocked to 300x500 -> ceiling is min(300,500)=300, radius 150 —
+    // far past the old MAX_SIZE/2 (40) clamp.
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);
+    const rect = {
+      width: 300, height: 500, left: 0, top: 0, right: 300, bottom: 500, x: 0, y: 0, toJSON: () => ({}),
+    };
+    const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect);
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+
+    fireEvent.pointerDown(g, { clientX: 195, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(g, { clientX: 205, clientY: 200, pointerId: 11 });
+    fireEvent.pointerMove(svg, { clientX: 0, clientY: 200, pointerId: 10 });
+    fireEvent.pointerMove(svg, { clientX: 900, clientY: 200, pointerId: 11 });
+
+    const rAfter = Number(container.querySelector(`[data-id="${g.getAttribute('data-id')}"] circle`).getAttribute('r'));
+    expect(rAfter).toBe(150); // min(300, 500) / 2, not MAX_SIZE(80) / 2
+    rectSpy.mockRestore();
+    widthSpy.mockRestore();
+  });
+
+  it('a second finger landing off the shape but near the first finger still starts a pinch', () => {
+    const widthSpy = vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const rBefore = Number(g.querySelector('circle').getAttribute('r'));
+
+    fireEvent.pointerDown(g, { clientX: 200, clientY: 200, pointerId: 10 }); // first finger hits the shape
+    // Second finger misses the shape element entirely (lands on bare stage)
+    // but within PINCH_PARTNER_RADIUS (60px) of the first finger's point.
+    fireEvent.pointerDown(svg, { clientX: 240, clientY: 200, pointerId: 11 });
+    fireEvent.pointerMove(svg, { clientX: 170, clientY: 200, pointerId: 10 });
+    fireEvent.pointerMove(svg, { clientX: 310, clientY: 200, pointerId: 11 });
+
+    const rAfter = Number(container.querySelector(`[data-id="${g.getAttribute('data-id')}"] circle`).getAttribute('r'));
+    expect(rAfter).toBeGreaterThan(rBefore); // pinch resize happened despite the second finger missing the shape
+    widthSpy.mockRestore();
+  });
+
+  it('a second finger landing far from the first finger does not start a pinch', () => {
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const rBefore = g.querySelector('circle').getAttribute('r');
+
+    fireEvent.pointerDown(g, { clientX: 200, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(svg, { clientX: 700, clientY: 200, pointerId: 11 }); // 500px away, outside PINCH_PARTNER_RADIUS (~378px)
+    fireEvent.pointerMove(svg, { clientX: 170, clientY: 200, pointerId: 10 });
+    fireEvent.pointerMove(svg, { clientX: 800, clientY: 200, pointerId: 11 });
+
+    const rAfter = container.querySelector(`[data-id="${g.getAttribute('data-id')}"] circle`).getAttribute('r');
+    expect(rAfter).toBe(rBefore); // no pinch resize; second finger acted independently
+  });
+
   it('lifting one pinch finger hands off to a plain drag on the other, no jump', () => {
     const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
     const svg = stage(container);
