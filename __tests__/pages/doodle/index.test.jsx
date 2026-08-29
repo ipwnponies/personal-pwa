@@ -17,7 +17,7 @@ describe('DoodlePage', () => {
   it('renders the doodle canvas', () => {
     render(<DoodlePage />);
     expect(screen.getByLabelText('Doodle canvas')).toBeInTheDocument();
-    expect(screen.getByLabelText('Clear canvas')).toBeInTheDocument();
+    expect(screen.getByLabelText('Clear shapes')).toBeInTheDocument();
   });
 
   it('sets html and body background to match the canvas stage on mount', () => {

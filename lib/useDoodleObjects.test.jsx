@@ -186,6 +186,24 @@ describe('useDoodleObjects', () => {
     expect(result.current.objects).toHaveLength(0);
   });
 
+  it("clear('shape') removes only shapes, leaving strokes", () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    act(() => result.current.spawnShape(0, 0));
+    act(() => result.current.startStroke(1, 1));
+    act(() => result.current.clear('shape'));
+    expect(result.current.objects).toHaveLength(1);
+    expect(result.current.objects[0].kind).toBe('stroke');
+  });
+
+  it("clear('stroke') removes only strokes, leaving shapes", () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    act(() => result.current.spawnShape(0, 0));
+    act(() => result.current.startStroke(1, 1));
+    act(() => result.current.clear('stroke'));
+    expect(result.current.objects).toHaveLength(1);
+    expect(result.current.objects[0].kind).toBe('shape');
+  });
+
   it('persists to localStorage and restores on a fresh hook (debounced)', () => {
     vi.useFakeTimers();
     const first = renderHook(() => useDoodleObjects(seq([0.2])));
