@@ -14,6 +14,7 @@ import {
   wipeDirtSpot,
   hatchEgg,
   assignSeekTargets,
+  computeAffinity,
   findDrop,
   consumeDrop,
   MET_THRESHOLD,
@@ -197,12 +198,20 @@ export default function Aquarium() {
           }
           const found = c.seekTargetId ? findDrop(claimed, c.seekTargetId) : null;
           const targetPoint = found ? { x: found.drop.x, y: found.drop.y } : null;
+          // A creature not currently seeking never reaches stepMovement's
+          // seek branch, so this value is unused wander-side — 1 just keeps
+          // the call self-explanatory without a misleading "0".
+          const affinity = found
+            ? computeAffinity(found.type === 'food' ? c.hunger : c.happiness)
+            : 1;
           const stepped = stepMovement(
             moveStatesRef.current.get(c.id),
             dt,
             now,
             boundsWidth,
             targetPoint,
+            Math.random,
+            affinity,
           );
           moveStatesRef.current.set(c.id, stepped);
           if (targetPoint && Math.hypot(stepped.x - targetPoint.x, stepped.y - targetPoint.y)
