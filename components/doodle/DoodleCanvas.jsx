@@ -19,6 +19,7 @@ const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_RADIUS = MOVE_THRESHOLD * 3; // proximity a second tap must land within to complete a double-tap
 const MUTE_KEY = 'doodle-muted';
 const TRAILS_KEY = 'doodle-trails';
+const MODE_KEY = 'doodle-mode';
 const TUNING_KEY = 'doodle-tuning';
 const MAX_DT = 0.05; // clamp frame delta so a backgrounded tab doesn't jump
 const MAX_POINTERS = 10; // defensive ceiling, not a gameplay limit
@@ -91,9 +92,16 @@ export default function DoodleCanvas({ rng, sound }) {
   const [pulsingIds, setPulsingIds] = useState(new Set());
   const [muted, setMuted] = useState(false);
   const [trailsEnabled, setTrailsEnabled] = useState(true);
+  // 'shape': tap spawns a shape, drag on empty canvas is ignored. 'draw': drag
+  // draws a stroke, tap draws a dot. Keeps the two interaction styles from
+  // fighting each other (a drag meant to nudge a half-built shape no longer
+  // leaves behind a stray doodle).
+  const [mode, setMode] = useState('shape');
 
   const trailsEnabledRef = useRef(trailsEnabled);
   trailsEnabledRef.current = trailsEnabled;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   const [tuning, setTuning] = useState(DEFAULT_TUNING);
   const tuningRef = useRef(tuning);
@@ -134,6 +142,23 @@ export default function DoodleCanvas({ rng, sound }) {
       // ignore — preference just won't persist
     }
   }, [trailsEnabled]);
+
+  // Load + persist the draw/shape mode preference.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(MODE_KEY);
+      if (stored === 'draw' || stored === 'shape') setMode(stored);
+    } catch {
+      // ignore — default mode stays in effect
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_KEY, mode);
+    } catch {
+      // ignore — preference just won't persist
+    }
+  }, [mode]);
 
   // Load + persist tuning-panel values (dust/particle/drift knobs). Merged
   // over the defaults rather than replacing them outright, so a stored value
@@ -421,10 +446,16 @@ export default function DoodleCanvas({ rng, sound }) {
           return;
         }
         p.mode = 'drag';
-      } else {
+      } else if (modeRef.current === 'draw') {
         p.mode = 'draw';
         p.strokeId = startStroke(p.startX, p.startY);
         soundRef.current.playStroke();
+      } else {
+        // Shape mode: a drag that starts on empty canvas is ignored rather
+        // than drawing a stroke, so building shapes doesn't accidentally
+        // doodle.
+        p.mode = 'inert';
+        return;
       }
     }
     if (p.mode === 'drag') moveShape(p.shapeId, pt.x, pt.y);
@@ -446,7 +477,7 @@ export default function DoodleCanvas({ rng, sound }) {
     if (p.moved) return; // drag/draw already handled on move
     if (p.shapeId) {
       handleShapeTap(p.shapeId, p.startX, p.startY);
-    } else {
+    } else if (modeRef.current === 'shape') {
       const pt = toLocal(e);
       const shape = spawnShape(
         pt.x,
@@ -456,6 +487,14 @@ export default function DoodleCanvas({ rng, sound }) {
         tuningRef.current.driftMax,
       );
       soundRef.current.playNote(shape.note);
+    } else {
+      // Draw mode: a tap (no movement) draws a dot — a stroke whose two
+      // points share the same spot, rendered as a filled circle by the
+      // polyline's round linecap.
+      const pt = toLocal(e);
+      const strokeId = startStroke(pt.x, pt.y);
+      appendStrokePoint(strokeId, pt.x, pt.y);
+      soundRef.current.playStroke();
     }
   };
 
@@ -490,8 +529,16 @@ export default function DoodleCanvas({ rng, sound }) {
         <button
           type="button"
           className={styles.toolButton}
-          aria-label="Clear canvas"
-          onClick={clear}
+          aria-label={mode === 'shape' ? 'Switch to draw mode' : 'Switch to shape mode'}
+          onClick={() => setMode((m) => (m === 'shape' ? 'draw' : 'shape'))}
+        >
+          {mode === 'shape' ? '⭐' : '✏️'}
+        </button>
+        <button
+          type="button"
+          className={styles.toolButton}
+          aria-label={mode === 'shape' ? 'Clear shapes' : 'Clear doodles'}
+          onClick={() => clear(mode === 'shape' ? 'shape' : 'stroke')}
         >
           🗑️
         </button>

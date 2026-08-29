@@ -77,9 +77,10 @@ describe('DoodleCanvas', () => {
     widthSpy.mockRestore();
   });
 
-  it('drag on empty space draws a stroke', () => {
+  it('drag on empty space draws a stroke, in draw mode', () => {
     const sound = mockSound();
-    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);
+    fireEvent.click(getByLabelText('Switch to draw mode'));
     const svg = stage(container);
     fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 1 });
     fireEvent.pointerMove(svg, { clientX: 60, clientY: 60, pointerId: 1 });
@@ -88,6 +89,44 @@ describe('DoodleCanvas', () => {
     expect(strokes(container)).toHaveLength(1);
     expect(shapeGroups(container)).toHaveLength(0);
     expect(sound.playStroke).toHaveBeenCalledTimes(1);
+  });
+
+  it('drag on empty space does nothing in shape mode (the default)', () => {
+    const sound = mockSound();
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(svg, { clientX: 60, clientY: 60, pointerId: 1 });
+    fireEvent.pointerMove(svg, { clientX: 80, clientY: 90, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 80, clientY: 90, pointerId: 1 });
+    expect(strokes(container)).toHaveLength(0);
+    expect(shapeGroups(container)).toHaveLength(0);
+    expect(sound.playStroke).not.toHaveBeenCalled();
+  });
+
+  it('tap (no movement) in draw mode draws a dot instead of spawning a shape', () => {
+    const sound = mockSound();
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);
+    fireEvent.click(getByLabelText('Switch to draw mode'));
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    expect(shapeGroups(container)).toHaveLength(0);
+    const dot = strokes(container);
+    expect(dot).toHaveLength(1);
+    const points = dot[0].getAttribute('points').trim().split(/\s+/);
+    expect(points).toEqual(['100,100', '100,100']);
+    expect(sound.playStroke).toHaveBeenCalledTimes(1);
+  });
+
+  it('mode toggle flips its label/icon and persists the preference', () => {
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Switch to draw mode'));
+    expect(getByLabelText('Switch to shape mode')).toBeTruthy();
+    expect(localStorage.getItem('doodle-mode')).toBe('draw');
+    fireEvent.click(getByLabelText('Switch to shape mode'));
+    expect(getByLabelText('Switch to draw mode')).toBeTruthy();
+    expect(localStorage.getItem('doodle-mode')).toBe('shape');
   });
 
   it('drag starting on a shape moves it instead of drawing', () => {
@@ -164,14 +203,40 @@ describe('DoodleCanvas', () => {
     expect(container.querySelectorAll('line').length).toBeGreaterThan(0);
   });
 
-  it('clear button empties the canvas', () => {
+  it('clear button in shape mode clears shapes only, leaving strokes untouched', () => {
     const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
     const svg = stage(container);
-    fireEvent.pointerDown(svg, { clientX: 30, clientY: 30, pointerId: 1 });
-    fireEvent.pointerUp(svg, { clientX: 30, clientY: 30, pointerId: 1 });
+    // Draw a stroke first (draw mode), then switch back to shape mode and spawn a shape.
+    fireEvent.click(getByLabelText('Switch to draw mode'));
+    fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(svg, { clientX: 60, clientY: 60, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 60, clientY: 60, pointerId: 1 });
+    fireEvent.click(getByLabelText('Switch to shape mode'));
+    fireEvent.pointerDown(svg, { clientX: 300, clientY: 300, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 300, clientY: 300, pointerId: 2 });
     expect(shapeGroups(container)).toHaveLength(1);
-    fireEvent.click(getByLabelText('Clear canvas'));
+    expect(strokes(container)).toHaveLength(1);
+
+    fireEvent.click(getByLabelText('Clear shapes'));
     expect(shapeGroups(container)).toHaveLength(0);
+    expect(strokes(container)).toHaveLength(1); // stroke survives a shape-mode clear
+  });
+
+  it('clear button in draw mode clears strokes only, leaving shapes untouched', () => {
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 300, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 300, clientY: 300, pointerId: 1 });
+    fireEvent.click(getByLabelText('Switch to draw mode'));
+    fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 2 });
+    fireEvent.pointerMove(svg, { clientX: 60, clientY: 60, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 60, clientY: 60, pointerId: 2 });
+    expect(shapeGroups(container)).toHaveLength(1);
+    expect(strokes(container)).toHaveLength(1);
+
+    fireEvent.click(getByLabelText('Clear doodles'));
+    expect(strokes(container)).toHaveLength(0);
+    expect(shapeGroups(container)).toHaveLength(1); // shape survives a draw-mode clear
   });
 
   it('mute button toggles its label and tells the sound engine to mute', () => {
@@ -247,7 +312,8 @@ describe('DoodleCanvas', () => {
   });
 
   it('two fingers on empty space draw two independent strokes concurrently', () => {
-    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Switch to draw mode'));
     const svg = stage(container);
 
     fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 1 });
@@ -936,7 +1002,8 @@ describe('DoodleCanvas', () => {
     // on. Under the old plain-value setObjects, this reliably wiped the
     // in-progress stroke entirely.
     const { cbs, rectSpy, nowSpy } = driveOneFrame();
-    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Switch to draw mode'));
     const svg = stage(container);
 
     fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 1 });
