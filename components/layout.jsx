@@ -143,7 +143,7 @@ export default function Layout({ children, home }) {
               alt={name}
               loading="eager"
             />
-            <h1 className={utilStyles.heading2Xl}>{name}</h1>
+            <h1>{name}</h1>
           </>
         ) : (
           <>
@@ -160,7 +160,7 @@ export default function Layout({ children, home }) {
                 />
               </a>
             </Link>
-            <h2 className={utilStyles.headingLg}>
+            <h2>
               <Link href="/">
                 {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
                 <a className={utilStyles.colorInherit}>{name}</a>
