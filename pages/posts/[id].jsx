@@ -5,7 +5,6 @@ import PropTypes from 'prop-types';
 import Date from '../../components/date';
 import Layout from '../../components/layout';
 import { getAllPostIds, getPostData } from '../../lib/posts';
-import utilStyles from '../../styles/utils.module.css';
 
 export default function Post({ postData }) {
   return (
@@ -15,11 +14,11 @@ export default function Post({ postData }) {
       </Head>
 
       <article>
-        <h1 className={utilStyles.headingXl}>{postData.title}</h1>
+        <h1>{postData.title}</h1>
 
-        <div className={utilStyles.lightText}>
+        <small>
           <Date dateString={postData.date} />
-        </div>
+        </small>
         <div dangerouslySetInnerHTML={{ __html: postData.contentHtml }} />
       </article>
     </Layout>
