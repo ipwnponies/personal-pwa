@@ -6,6 +6,7 @@ Instructions for AI coding agents working on this codebase.
 
 - Next.js (latest) with React 18 — JavaScript, not TypeScript
 - next-pwa 5.5.4 with Workbox for service worker and offline caching
+- @picocss/pico v2 (npm, not CDN) — base element styling layer for Layout/home/settings/post pages
 - CSS Modules for component-scoped styles, `styles/global.css` for base styles
 - ESLint with Airbnb config + Prettier
 - Vitest with jsdom, React Testing Library, jest-dom matchers
@@ -37,10 +38,14 @@ styles/          Global CSS and CSS Module utilities
 | `npm test` | Run tests once (vitest) |
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run lint` | Run ESLint (Airbnb rules). Config is `.eslintrc.yml` (legacy format). CI does not gate on lint |
+| `npx serve out` | Preview the production static export locally — there is no `next start` with `output: 'export'` |
+
+`npm run lint --no-ignore` mishandles arg passthrough — use `npx eslint . --no-ignore` directly when linting files outside the default tree (e.g. a worktree).
 
 ## Testing Conventions
 
 - Test files go **next to the source file** they test: `lib/posts.test.js` for `lib/posts.js`
+- Any file containing JSX — including hooks/utilities, not just components — needs a `.jsx` extension. Vitest's JSX transform errors on plain `.js`.
 - **Exception: never co-locate test files under `pages/`.** Next.js's pages-router treats every file under `pages/` as a route candidate, including `.test.js`/`.test.jsx` files — the production build (`next build`) crashes trying to statically generate a page for them. Tests for files under `pages/` go in `__tests__/pages/`, mirroring the path (e.g. `pages/fitness/index.jsx` → `__tests__/pages/fitness/index.test.jsx`).
 - File pattern: `**/*.test.{js,jsx}`
 - React component tests use `@testing-library/react`
@@ -87,6 +92,12 @@ date: 'YYYY-MM-DD'
 ```
 
 Both fields are expected — there is no validation, but missing `date` breaks sorting (`NaN` comparison) and missing `title` renders as undefined in the UI.
+
+## Pico CSS Theming
+
+- Pico's whole light/dark palette (100+ vars) is gated behind `data-theme` on `<html>` — set that attribute to switch themes, don't override individual `--pico-*` vars on `documentElement`.
+- `h1`-`h6` redeclare `--pico-color` from per-level vars (`--pico-hN-color`), so an inherited root-level override never reaches headings anyway.
+- Pages that force their own background color (`fitness`, `doodle`, `random`) must set `data-theme` themselves via `usePageBackground`/`PageThemeScript` (`lib/usePageBackground.jsx`) to keep Pico's text colors legible against it.
 
 ## CI/CD
 
