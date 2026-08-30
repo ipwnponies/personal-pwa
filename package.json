@@ -9,6 +9,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@picocss/pico": "^2.1.1",
     "date-fns": "^2.28.0",
     "gray-matter": "^4.0.3",
     "local-ssl-proxy": "^1.2.3",
