@@ -7,7 +7,7 @@ import 'react-tabs/style/react-tabs.css';
 import styles from './index.module.css';
 import { weightedRandomChoice, generateId } from '../../lib/random';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
-import { usePageBackground } from '../../lib/usePageBackground';
+import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
 
 const HORIZONTAL_SWIPE_THRESHOLD = 50;
@@ -516,7 +516,7 @@ function WeightedChoices() {
 const TAB_COUNT = 2;
 
 export default function Random() {
-  usePageBackground('#1a1a2e');
+  const theme = usePageBackground('#1a1a2e');
   const { basePath } = useRouter();
   const [tabIndex, setTabIndex] = useState(0);
 
@@ -537,6 +537,7 @@ export default function Random() {
       onTouchEnd={pageSwipe.onTouchEnd}
     >
       <Head>
+        <PageThemeScript theme={theme} />
         {pwaMetaTags(basePath, { themeColor: '#1a1a2e', manifestPath: 'random-manifest.json' })}
         <style>{'html,body{background-color:#1a1a2e}'}</style>
       </Head>

@@ -23,3 +23,7 @@ img {
   max-width: 100%;
   display: block;
 }
+
+small {
+  color: var(--pico-muted-color);
+}

@@ -2,7 +2,6 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import React, { useState } from 'react';
 import Layout, { siteTitle } from '../components/layout';
-import utilStyles from '../styles/utils.module.css';
 
 const UPDATE_CHECK_TIMEOUT_MS = 10000;
 
@@ -68,8 +67,8 @@ export default function Settings() {
       <Head>
         <title>{`Settings | ${siteTitle}`}</title>
       </Head>
-      <section className={utilStyles.headingMd}>
-        <h2 className={utilStyles.headingLg}>Settings</h2>
+      <section>
+        <h2>Settings</h2>
         <p>Keep your app up to date.</p>
         <p>
           <button type="button" onClick={checkForUpdates}>

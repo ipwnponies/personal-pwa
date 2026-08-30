@@ -19,7 +19,7 @@ export default function Home({ allPostsData }) {
       <Head>
         <title>{siteTitle}</title>
       </Head>
-      <section className={utilStyles.headingMd}>
+      <section>
         <h2>Apps</h2>
         <p>
           <a href="_offline">offline mode</a>
@@ -44,14 +44,14 @@ export default function Home({ allPostsData }) {
         </p>
       </section>
 
-      <section className={`${utilStyles.headingMd} ${utilStyles.padding1px}`}>
-        <h2 className={utilStyles.headingLg}>blog</h2>
-        <ul className={utilStyles.list}>
+      <section className={utilStyles.padding1px}>
+        <h2>blog</h2>
+        <ul>
           {allPostsData.map(({ id, date, title }) => (
-            <li className={utilStyles.listItem} key={id}>
+            <li key={id}>
               <Link href={`/posts/${id}`}>{title}</Link>
               <br />
-              <small className={utilStyles.lightText}>
+              <small>
                 <Date dateString={date} />
               </small>
             </li>

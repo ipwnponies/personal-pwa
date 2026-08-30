@@ -12,7 +12,7 @@ import {
   buildRepMaxTable,
 } from '../../lib/epley';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
-import { usePageBackground } from '../../lib/usePageBackground';
+import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
 import styles from './index.module.css';
 
@@ -133,7 +133,7 @@ SwipeNumberField.propTypes = {
 };
 
 export default function FitnessCalculator() {
-  usePageBackground('#ffffff');
+  const theme = usePageBackground('#ffffff');
   const { basePath } = useRouter();
   const [weight, setWeight] = useState(100);
   const [repetitions, setRepetitions] = useState(5);
@@ -186,6 +186,7 @@ export default function FitnessCalculator() {
   return (
     <>
       <Head>
+        <PageThemeScript theme={theme} />
         {pwaMetaTags(basePath, {
           manifestPath: 'fitness-manifest.json',
           appName: 'Zero-to-Hero App',

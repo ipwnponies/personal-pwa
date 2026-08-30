@@ -6,7 +6,7 @@ import PropTypes from 'prop-types';
 
 import styles from './layout.module.css';
 import utilStyles from '../styles/utils.module.css';
-import { usePageBackground } from '../lib/usePageBackground';
+import { usePageBackground, PageThemeScript } from '../lib/usePageBackground';
 
 const name = 'ipwnponies';
 export const siteTitle = 'Next.js Sample Website';
@@ -104,11 +104,12 @@ export function pwaMetaTags(basePath, options = {}) {
 }
 
 export default function Layout({ children, home }) {
-  usePageBackground('#ffffff');
+  const theme = usePageBackground('#ffffff');
   const { basePath } = useRouter();
   return (
     <div className={styles.container}>
       <Head>
+        <PageThemeScript theme={theme} />
         <link
           rel="icon"
           type="image/png"
@@ -143,7 +144,7 @@ export default function Layout({ children, home }) {
               alt={name}
               loading="eager"
             />
-            <h1 className={utilStyles.heading2Xl}>{name}</h1>
+            <h1>{name}</h1>
           </>
         ) : (
           <>
@@ -160,7 +161,7 @@ export default function Layout({ children, home }) {
                 />
               </a>
             </Link>
-            <h2 className={utilStyles.headingLg}>
+            <h2>
               <Link href="/">
                 {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
                 <a className={utilStyles.colorInherit}>{name}</a>
