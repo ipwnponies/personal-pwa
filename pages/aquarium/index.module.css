@@ -112,6 +112,51 @@
   cursor: pointer;
 }
 
+.bucketTray {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #04202f;
+}
+
+.bucketFish {
+  width: 3.25rem;
+  height: 3.25rem;
+  flex-shrink: 0;
+  border-radius: 0.75rem;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 1.6rem;
+  cursor: pointer;
+}
+
+.trash {
+  width: 3.25rem;
+  height: 3.25rem;
+  flex-shrink: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+}
+
+.trashHolding {
+  /* Kept in sync by hand with DISCARD_HOLD_MS in index.jsx — a CSS Module
+     can't reference a JS constant directly. */
+  animation: trashHold 500ms ease-in forwards;
+}
+
+@keyframes trashHold {
+  0% { transform: rotate(0deg) scale(1); }
+  20% { transform: rotate(-3deg) scale(1.02); }
+  40% { transform: rotate(3deg) scale(1.04); }
+  60% { transform: rotate(-6deg) scale(1.06); }
+  80% { transform: rotate(6deg) scale(1.08); }
+  100% { transform: rotate(-8deg) scale(1.1); }
+}
+
 .palette {
   display: flex;
   flex-wrap: wrap;
