@@ -521,4 +521,13 @@ describe('Aquarium page fishing gesture', () => {
     fireEvent.pointerUp(tank, { clientX: 200, clientY: 100, pointerId: 1 });
     expect(screen.queryByTestId('bait')).not.toBeInTheDocument();
   });
+
+  it('renders a line from the rod tip toward the bait during a cast', () => {
+    seedTank({ selectedTool: 'fishing' });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    fireEvent.pointerDown(tank, { clientX: 200, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 200, clientY: 200, pointerId: 1 });
+    expect(screen.getByTestId('line')).toBeInTheDocument();
+  });
 });
