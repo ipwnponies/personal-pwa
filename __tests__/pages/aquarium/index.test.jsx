@@ -68,6 +68,20 @@ describe('Aquarium page', () => {
     expect(screen.queryByRole('button', { name: /sponge/i })).not.toBeInTheDocument();
   });
 
+  it('renders the fishing tool button', () => {
+    render(<Aquarium />);
+    expect(screen.getByRole('button', { name: /fishing/i })).toBeInTheDocument();
+  });
+
+  it('tapping the tank with fishing selected does not drop food or a toy', () => {
+    render(<Aquarium />);
+    fireEvent.click(screen.getByRole('button', { name: /fishing/i }));
+    const tank = screen.getByRole('presentation');
+    fireEvent.click(tank, { clientX: 50, clientY: 50 });
+    expect(screen.queryAllByTestId('foodDrop')).toHaveLength(0);
+    expect(screen.queryAllByTestId('toyDrop')).toHaveLength(0);
+  });
+
   it('renders starter creatures', () => {
     render(<Aquarium />);
     expect(screen.getAllByTestId('creature').length).toBeGreaterThan(0);

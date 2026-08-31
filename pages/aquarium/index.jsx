@@ -41,6 +41,8 @@ const MIN_DRAG_PX = 12;
 // decorations aren't a movement/fish concept — a preschooler's imprecise tap
 // still grabs the item.
 const GRAB_RADIUS = 0.06;
+const FISHING_TOOL_KEY = 'fishing';
+const SURFACE_LINE_FRAC = 0.12;
 
 const TOOLS = [
   { key: 'food', label: 'Food', emoji: '🍤', effect: '🍤' },
@@ -282,12 +284,17 @@ export default function Aquarium() {
     commit((prev) => wipeDirtSpot(prev, id), unlocked ? 'unlock' : 'sparkle');
   };
 
+  const handleFishingPointerDown = () => {};
+  const handleFishingPointerMove = () => {};
+  const handleFishingPointerUp = () => {};
+
   // Any tap inside the tank drops the selected tool's item at that point —
   // including a tap that lands on a fish, per the "guaranteed feed this one"
   // interaction. Dirt spots stop this from bubbling up (see their own
   // onClick) so tapping a spot always wipes it instead of dropping.
   const handleTankClick = (e) => {
     if (!tank) return;
+    if (tank.selectedTool === FISHING_TOOL_KEY) return;
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
       return;
@@ -309,6 +316,10 @@ export default function Aquarium() {
   // as a drag — matching handleTankClick, which already accepts taps anywhere.
   const handleTankPointerDown = (e) => {
     if (!tank) return;
+    if (tank.selectedTool === FISHING_TOOL_KEY) {
+      handleFishingPointerDown(e);
+      return;
+    }
     // dragRef tracks a single gesture, not one per pointerId — ignore a
     // second concurrent pointer (e.g. a resting palm, or multi-touch) rather
     // than letting it hijack the first pointer's in-progress drag/grab.
@@ -372,6 +383,10 @@ export default function Aquarium() {
   const isActiveGesturePointer = (e) => dragRef.current.active && e.pointerId === dragRef.current.pointerId;
 
   const handleTankPointerMove = (e) => {
+    if (tank && tank.selectedTool === FISHING_TOOL_KEY) {
+      handleFishingPointerMove(e);
+      return;
+    }
     if (!tank || !isActiveGesturePointer(e)) return;
     const drag = dragRef.current;
     if (!drag.dragging) {
@@ -415,9 +430,16 @@ export default function Aquarium() {
   const handleTankPointerUp = (e) => {
     // A previously-ignored second pointer releasing: suppress its own
     // trailing click right here, at the moment it's actually about to fire,
-    // instead of for its whole dwell time (see handleTankPointerDown).
+    // instead of for its whole dwell time (see handleTankPointerDown). Checked
+    // before the fishing branch below so this suppression always applies,
+    // regardless of which tool ends up selected by the time the pointer
+    // actually releases.
     if (ignoredPointersRef.current.delete(e.pointerId)) {
       suppressClickRef.current = true;
+      return;
+    }
+    if (tank && tank.selectedTool === FISHING_TOOL_KEY) {
+      handleFishingPointerUp(e);
       return;
     }
     if (!isActiveGesturePointer(e)) return;
@@ -441,14 +463,24 @@ export default function Aquarium() {
   // anything (KTD3's no-punishment, no-surprise-loss design).
   const handleTankPointerCancel = (e) => {
     // No trailing click follows a cancel, so an ignored pointer cancelling
-    // just needs its tracked entry cleared, not a suppression.
+    // just needs its tracked entry cleared, not a suppression — checked
+    // before the fishing branch so this cleanup always runs regardless of
+    // whatever tool is selected by the time the cancel arrives.
     ignoredPointersRef.current.delete(e.pointerId);
+    if (tank && tank.selectedTool === FISHING_TOOL_KEY) {
+      handleFishingPointerUp(e);
+      return;
+    }
     if (!isActiveGesturePointer(e)) return;
     dragRef.current = { active: false, lastSample: 0 };
   };
 
   const handleTankPointerLeave = (e) => {
     ignoredPointersRef.current.delete(e.pointerId);
+    if (tank && tank.selectedTool === FISHING_TOOL_KEY) {
+      handleFishingPointerUp(e);
+      return;
+    }
     if (!isActiveGesturePointer(e)) return;
     // A decoration grab stays active through pointer capture (see
     // handleTankPointerDown) — only a plain paint-drag ends on leave.
@@ -641,6 +673,15 @@ export default function Aquarium() {
             <span aria-hidden="true">{tool.emoji}</span>
           </button>
         ))}
+        <button
+          type="button"
+          className={`${styles.tool} ${tank.selectedTool === FISHING_TOOL_KEY ? styles.selected : ''}`}
+          aria-pressed={tank.selectedTool === FISHING_TOOL_KEY}
+          aria-label="Fishing"
+          onClick={() => selectTool(FISHING_TOOL_KEY)}
+        >
+          <span aria-hidden="true">🎣</span>
+        </button>
         <div
           className={styles.decorationPalette}
           data-testid="decorationPalette"
