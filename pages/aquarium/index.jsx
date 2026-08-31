@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 import styles from './index.module.css';
 import { pwaMetaTags } from '../../components/layout';
@@ -20,6 +21,7 @@ import {
   MET_THRESHOLD,
   NEED_FLOOR,
   NEED_MAX,
+  TANK_CAP,
   isDecorationCapReached,
   placeDecoration,
   moveDecoration,
@@ -32,6 +34,8 @@ import {
   generateHiddenAttraction,
   computeBiteChance,
   catchFish,
+  returnFish,
+  deleteFromBucket,
 } from '../../lib/aquarium/fishing';
 import { createSound } from '../../lib/aquarium/sound';
 import { getDecorationType } from '../../lib/aquarium/decorations';
@@ -49,6 +53,7 @@ const MIN_DRAG_PX = 12;
 // still grabs the item.
 const GRAB_RADIUS = 0.06;
 const FISHING_TOOL_KEY = 'fishing';
+const DISCARD_HOLD_MS = 500;
 const SURFACE_LINE_FRAC = 0.12;
 const ROD_EASE_PER_SEC = 3;
 
@@ -144,6 +149,16 @@ export default function Aquarium() {
   // computeAffinity (a fish's unadvertised interest in the bait), prevDist
   // feeds computeBiteChance's "got closer since last tick" snowball.
   const biteStatesRef = useRef(new Map());
+  // Single-slot by design, like dragRef above: only one bucket-fish drag is
+  // tracked at a time. A second concurrent drag on a different fish would
+  // overwrite this and could cancel the first one's pending discard hold —
+  // accepted as an unlikely multi-touch edge case rather than adding
+  // per-pointer tracking for a gesture two fingers are unlikely to both
+  // reach for on the same bucket tray.
+  const bucketDragRef = useRef({ active: false, creatureId: null, pointerId: null });
+  const trashTimerRef = useRef(null);
+  const trashRef = useRef(null);
+  const [holdingTrashId, setHoldingTrashId] = useState(null);
 
   // Mount: load, catch up offline decay, wire sound.
   useEffect(() => {
@@ -170,6 +185,11 @@ export default function Aquarium() {
     // to start once tank first loads, and setTank/applyElapsed/saveTank are
     // stable across renders.
   }, [tank !== null]);
+
+  // A pending discard-hold timer (armed in handleBucketPointerMove) has no
+  // other teardown path — navigating away mid-hold would otherwise leave it
+  // running and fire its flushSync'd delete against a torn-down page.
+  useEffect(() => () => clearTimeout(trashTimerRef.current), []);
 
   const commit = useCallback((updater, cue) => {
     setTank((prev) => {
@@ -716,6 +736,95 @@ export default function Aquarium() {
     commit((prev) => hatchEgg(prev, Date.now()), 'pop');
   };
 
+  const handleBucketPointerDown = (e, creatureId) => {
+    if (typeof e.target.setPointerCapture === 'function') {
+      e.target.setPointerCapture(e.pointerId);
+    }
+    // A second concurrent bucket-tray drag replaces the tracked gesture below
+    // (single-slot by design — see bucketDragRef's declaration). Without also
+    // clearing any pending discard timer here, the first gesture's timer
+    // would still fire later against the fish id it captured, permanently
+    // deleting it even though nothing is being held over the trash anymore.
+    clearTimeout(trashTimerRef.current);
+    trashTimerRef.current = null;
+    setHoldingTrashId(null);
+    bucketDragRef.current = { active: true, creatureId, pointerId: e.pointerId };
+  };
+
+  const handleBucketPointerMove = (e) => {
+    const drag = bucketDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+    const overTrash = trashRef.current && isPointInRect(trashRef.current, e.clientX, e.clientY);
+    // The pending-timer REF, not holdingTrashId, is what gates starting a
+    // hold: React treats pointermove as continuous-priority and may not have
+    // committed the setHoldingTrashId from the previous move before the next
+    // one arrives, so a state-based guard lets two moves each start their own
+    // timer — the second overwrites trashTimerRef and the first becomes an
+    // orphan that no clearTimeout can reach, deleting the fish 500ms later
+    // even after the user pulled away or released. holdingTrashId is now
+    // purely the shake-animation class driver.
+    if (overTrash && trashTimerRef.current == null) {
+      setHoldingTrashId(drag.creatureId);
+      trashTimerRef.current = setTimeout(() => {
+        // Cleared first so the ref never names a timer that has already
+        // fired — otherwise the next hold would be gated out by a stale id.
+        trashTimerRef.current = null;
+        // This fires from a bare timer, outside any React-recognized event or
+        // act() wrapper (a real pointer-hold has no such wrapper either), so
+        // React's concurrent scheduler would otherwise defer the resulting
+        // setTank — and its saveTank side effect — past this callback. flushSync
+        // forces the delete (and its persistence) to complete before the timer
+        // callback returns, matching what a real held-finger discard needs:
+        // the fish is actually gone the instant the hold completes.
+        flushSync(() => {
+          commit((prev) => deleteFromBucket(prev, drag.creatureId), 'sparkle');
+        });
+        // Permanently gone — unlike a returned fish, a discarded one never
+        // re-enters the tank, so its stale movement state would otherwise
+        // sit in the Map for the rest of the page's lifetime.
+        moveStatesRef.current.delete(drag.creatureId);
+        setHoldingTrashId(null);
+        bucketDragRef.current = { active: false, creatureId: null, pointerId: null };
+      }, DISCARD_HOLD_MS);
+    } else if (!overTrash && trashTimerRef.current != null) {
+      clearTimeout(trashTimerRef.current);
+      trashTimerRef.current = null;
+      setHoldingTrashId(null);
+    }
+  };
+
+  const handleBucketPointerUp = (e) => {
+    const drag = bucketDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+    clearTimeout(trashTimerRef.current);
+    trashTimerRef.current = null;
+    setHoldingTrashId(null);
+    const overTank = tankRef.current && isPointInRect(tankRef.current, e.clientX, e.clientY);
+    if (overTank) {
+      // returnFish silently no-ops when the tank is already at TANK_CAP
+      // (bucketing a fish can free a slot an egg then fills) — check the same
+      // condition here so a refused return gets the cap-reached cue instead
+      // of the success one, matching dropAt's own cap-refused feedback.
+      if (tank.creatures.length >= TANK_CAP) {
+        const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+        spawnEffect(x, y, '🚫');
+        if (soundRef.current) soundRef.current.play('refused');
+      } else {
+        commit((prev) => returnFish(prev, drag.creatureId), 'pop');
+      }
+    }
+    bucketDragRef.current = { active: false, creatureId: null, pointerId: null };
+  };
+
+  const handleBucketPointerCancel = (e) => {
+    const drag = bucketDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+    clearTimeout(trashTimerRef.current);
+    trashTimerRef.current = null;
+    setHoldingTrashId(null);
+    bucketDragRef.current = { active: false, creatureId: null, pointerId: null };
+  };
+
   const toggleSound = () =>
     commit((prev) => {
       const soundOn = !prev.soundOn;
@@ -918,6 +1027,32 @@ export default function Aquarium() {
           </button>
         )}
       </div>
+
+      {tank.bucket.length > 0 && (
+        <div className={styles.bucketTray} data-testid="bucketTray" role="group" aria-label="Bucket">
+          {tank.bucket.map((c) => {
+            const species = getSpecies(c.species);
+            return (
+              <button
+                type="button"
+                key={c.id}
+                data-testid="bucketFish"
+                className={`${styles.bucketFish} ${holdingTrashId === c.id ? styles.trashHolding : ''}`}
+                aria-label={`${species.name} in bucket`}
+                onPointerDown={(e) => handleBucketPointerDown(e, c.id)}
+                onPointerMove={handleBucketPointerMove}
+                onPointerUp={handleBucketPointerUp}
+                onPointerCancel={handleBucketPointerCancel}
+              >
+                <span aria-hidden="true">{species.emoji[c.stage]}</span>
+              </button>
+            );
+          })}
+          <div className={styles.trash} data-testid="trash" ref={trashRef} aria-label="Trash" role="img">
+            🗑️
+          </div>
+        </div>
+      )}
 
       <div className={styles.palette} role="group" aria-label="Care tools">
         {TOOLS.map((tool) => (

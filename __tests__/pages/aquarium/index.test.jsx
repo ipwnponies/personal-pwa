@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import Aquarium from '../../../pages/aquarium/index';
 import { createSound } from '../../../lib/aquarium/sound';
+import { TANK_CAP } from '../../../lib/aquarium/simulation';
 
 vi.mock('next/router', () => ({
   useRouter: () => ({ basePath: '' }),
@@ -814,5 +815,243 @@ describe('Aquarium page fishing gesture', () => {
     });
     const laterY1 = screen.getByTestId('line').querySelector('line').getAttribute('y1');
     expect(laterY1).toBe(initialY1);
+  });
+});
+
+describe('Aquarium page bucket', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function mockRect() {
+      const testId = this.getAttribute('data-testid');
+      if (testId === 'trash') return { left: 350, top: 380, right: 400, bottom: 430, width: 50, height: 50 };
+      return TANK_RECT;
+    });
+  });
+
+  it('renders bucketed fish and hides the tray when the bucket is empty', () => {
+    seedTank({});
+    render(<Aquarium />);
+    expect(screen.queryByTestId('bucketTray')).not.toBeInTheDocument();
+  });
+
+  it('shows a bucketed fish in the tray', () => {
+    seedTank({
+      bucket: [{
+        id: 'b1', species: 'clownfish', bornAt: 0, stage: 'baby',
+        hunger: 100, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0, y: 0,
+      }],
+    });
+    render(<Aquarium />);
+    expect(screen.getAllByTestId('bucketFish')).toHaveLength(1);
+  });
+
+  it('dragging a bucketed fish onto the tank returns it to the tank', () => {
+    seedTank({
+      bucket: [{
+        id: 'b1', species: 'clownfish', bornAt: 0, stage: 'baby',
+        hunger: 100, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0, y: 0,
+      }],
+    });
+    render(<Aquarium />);
+    const fish = screen.getByTestId('bucketFish');
+    fireEvent.pointerDown(fish, { clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerUp(fish, { clientX: 200, clientY: 150, pointerId: 1 });
+    const result = readTank();
+    expect(result.bucket).toHaveLength(0);
+    expect(result.creatures.some((c) => c.id === 'b1')).toBe(true);
+  });
+
+  it('holding a bucketed fish over the trash for 500ms deletes it', () => {
+    vi.useFakeTimers();
+    try {
+      seedTank({
+        bucket: [{
+          id: 'b1', species: 'clownfish', bornAt: 0, stage: 'baby',
+          hunger: 100, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0, y: 0,
+        }],
+      });
+      render(<Aquarium />);
+      const fish = screen.getByTestId('bucketFish');
+      fireEvent.pointerDown(fish, { clientX: 10, clientY: 10, pointerId: 1 });
+      fireEvent.pointerMove(fish, { clientX: 375, clientY: 405, pointerId: 1 });
+      vi.advanceTimersByTime(500);
+      const result = readTank();
+      expect(result.bucket).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The discard hold is gated on the pending-timer ref rather than on the
+  // holdingTrashId state (which React may not have committed between two
+  // rapid pointermoves, letting an unreachable orphan timer delete the fish
+  // after the user pulled away). These two cover the ref's other end: it must
+  // be nulled again on drag-off and once the timer has fired, or a second
+  // hold could never start.
+  it('dragging off the trash and back over it can start a fresh hold', () => {
+    vi.useFakeTimers();
+    try {
+      seedTank({
+        bucket: [{
+          id: 'b1', species: 'clownfish', bornAt: 0, stage: 'baby',
+          hunger: 100, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0, y: 0,
+        }],
+      });
+      render(<Aquarium />);
+      const fish = screen.getByTestId('bucketFish');
+      fireEvent.pointerDown(fish, { clientX: 10, clientY: 10, pointerId: 1 });
+      fireEvent.pointerMove(fish, { clientX: 375, clientY: 405, pointerId: 1 });
+      vi.advanceTimersByTime(300);
+      // Pull away before the hold completes — that timer must be cancelled.
+      fireEvent.pointerMove(fish, { clientX: 10, clientY: 10, pointerId: 1 });
+      vi.advanceTimersByTime(500);
+      expect(readTank().bucket).toHaveLength(1);
+      // Back over the trash: a new hold starts and completes.
+      fireEvent.pointerMove(fish, { clientX: 375, clientY: 405, pointerId: 1 });
+      vi.advanceTimersByTime(500);
+      expect(readTank().bucket).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a second fish can be discarded after a completed hold', () => {
+    vi.useFakeTimers();
+    try {
+      const fishAt = (id) => ({
+        id, species: 'clownfish', bornAt: 0, stage: 'baby',
+        hunger: 100, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0, y: 0,
+      });
+      seedTank({ bucket: [fishAt('b1'), fishAt('b2')] });
+      render(<Aquarium />);
+      const first = screen.getAllByTestId('bucketFish')[0];
+      fireEvent.pointerDown(first, { clientX: 10, clientY: 10, pointerId: 1 });
+      fireEvent.pointerMove(first, { clientX: 375, clientY: 405, pointerId: 1 });
+      vi.advanceTimersByTime(500);
+      expect(readTank().bucket.map((c) => c.id)).toEqual(['b2']);
+      const second = screen.getByTestId('bucketFish');
+      fireEvent.pointerDown(second, { clientX: 10, clientY: 10, pointerId: 2 });
+      fireEvent.pointerMove(second, { clientX: 375, clientY: 405, pointerId: 2 });
+      vi.advanceTimersByTime(500);
+      expect(readTank().bucket).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releasing before 500ms over the trash does not delete it', () => {
+    vi.useFakeTimers();
+    try {
+      seedTank({
+        bucket: [{
+          id: 'b1', species: 'clownfish', bornAt: 0, stage: 'baby',
+          hunger: 100, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0, y: 0,
+        }],
+      });
+      render(<Aquarium />);
+      const fish = screen.getByTestId('bucketFish');
+      fireEvent.pointerDown(fish, { clientX: 10, clientY: 10, pointerId: 1 });
+      fireEvent.pointerMove(fish, { clientX: 375, clientY: 405, pointerId: 1 });
+      vi.advanceTimersByTime(300);
+      fireEvent.pointerUp(fish, { clientX: 375, clientY: 405, pointerId: 1 });
+      vi.advanceTimersByTime(500);
+      const result = readTank();
+      expect(result.bucket).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a second bucket-tray drag does not orphan the first drag's pending discard timer", () => {
+    vi.useFakeTimers();
+    try {
+      const fishAt = (id) => ({
+        id, species: 'clownfish', bornAt: 0, stage: 'baby',
+        hunger: 100, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0, y: 0,
+      });
+      seedTank({ bucket: [fishAt('b1'), fishAt('b2')] });
+      render(<Aquarium />);
+      const [first, second] = screen.getAllByTestId('bucketFish');
+      fireEvent.pointerDown(first, { clientX: 10, clientY: 10, pointerId: 1 });
+      fireEvent.pointerMove(first, { clientX: 375, clientY: 405, pointerId: 1 });
+      vi.advanceTimersByTime(200);
+      // A second finger grabs a different fish before the first hold
+      // completes or releases — this must cancel the first pending discard
+      // rather than leave its timer to fire later on its own, against
+      // whichever fish it originally captured.
+      fireEvent.pointerDown(second, { clientX: 10, clientY: 10, pointerId: 2 });
+      fireEvent.pointerUp(first, { clientX: 10, clientY: 10, pointerId: 1 });
+      vi.advanceTimersByTime(300);
+      expect(readTank().bucket.map((c) => c.id)).toEqual(['b1', 'b2']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a pointercancel from an unrelated pointer does not cancel another finger's in-progress bucket drag", () => {
+    vi.useFakeTimers();
+    try {
+      seedTank({
+        bucket: [{
+          id: 'b1', species: 'clownfish', bornAt: 0, stage: 'baby',
+          hunger: 100, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0, y: 0,
+        }],
+      });
+      render(<Aquarium />);
+      const fish = screen.getByTestId('bucketFish');
+      fireEvent.pointerDown(fish, { clientX: 10, clientY: 10, pointerId: 1 });
+      fireEvent.pointerMove(fish, { clientX: 375, clientY: 405, pointerId: 1 });
+      // A cancel for a pointer this drag never tracked (e.g. a stray second
+      // touch cancelling) must not tear down pointer 1's in-progress hold.
+      fireEvent.pointerCancel(fish, { pointerId: 2 });
+      vi.advanceTimersByTime(500);
+      expect(readTank().bucket).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dragging a bucketed fish onto an already-full tank plays the refused cue, not the success one', () => {
+    const fishAt = (id) => ({
+      id, species: 'clownfish', bornAt: 0, stage: 'baby',
+      hunger: 100, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0, y: 0,
+    });
+    seedTank({
+      creatures: Array.from({ length: TANK_CAP }, (_, i) => fishAt(`c${i}`)),
+      bucket: [fishAt('b1')],
+    });
+    render(<Aquarium />);
+    const fish = screen.getByTestId('bucketFish');
+    fireEvent.pointerDown(fish, { clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerUp(fish, { clientX: 200, clientY: 150, pointerId: 1 });
+    // returnFish itself already silently no-ops against a full tank — this
+    // is about the cue the player hears, which must match that refusal
+    // rather than falsely confirming success.
+    expect(latestPlaySpy()).toHaveBeenCalledWith('refused');
+    expect(latestPlaySpy()).not.toHaveBeenCalledWith('pop');
+    const result = readTank();
+    expect(result.bucket).toHaveLength(1);
+    expect(result.creatures).toHaveLength(TANK_CAP);
+  });
+
+  it('unmounting while a discard hold is pending clears the timer instead of deleting the fish afterward', () => {
+    vi.useFakeTimers();
+    try {
+      seedTank({
+        bucket: [{
+          id: 'b1', species: 'clownfish', bornAt: 0, stage: 'baby',
+          hunger: 100, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0, y: 0,
+        }],
+      });
+      const { unmount } = render(<Aquarium />);
+      const fish = screen.getByTestId('bucketFish');
+      fireEvent.pointerDown(fish, { clientX: 10, clientY: 10, pointerId: 1 });
+      fireEvent.pointerMove(fish, { clientX: 375, clientY: 405, pointerId: 1 });
+      unmount();
+      expect(() => vi.advanceTimersByTime(500)).not.toThrow();
+      expect(readTank().bucket).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
