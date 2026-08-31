@@ -25,7 +25,7 @@ import {
   moveDecoration,
   removeDecoration,
 } from '../../lib/aquarium/simulation';
-import { createMovementState, stepMovement, wobbleOffset, CONTACT_RADIUS } from '../../lib/aquarium/movement';
+import { createMovementState, stepMovement, wobbleOffset, easeToward, CONTACT_RADIUS } from '../../lib/aquarium/movement';
 import { createSound } from '../../lib/aquarium/sound';
 import { getDecorationType } from '../../lib/aquarium/decorations';
 
@@ -43,6 +43,7 @@ const MIN_DRAG_PX = 12;
 const GRAB_RADIUS = 0.06;
 const FISHING_TOOL_KEY = 'fishing';
 const SURFACE_LINE_FRAC = 0.12;
+const ROD_EASE_PER_SEC = 3;
 
 const TOOLS = [
   { key: 'food', label: 'Food', emoji: '🍤', effect: '🍤' },
@@ -230,6 +231,14 @@ export default function Aquarium() {
     const loop = (time) => {
       const dt = lastTime == null ? 0 : Math.min((time - lastTime) / 1000, 0.1);
       lastTime = time;
+      const fishing = fishingRef.current;
+      if (fishing.phase !== 'idle') {
+        // Only the horizontal lag eases toward the bait — the rod tip is
+        // anchored to the surface line (handleFishingPointerDown/resetFishing
+        // both pin rodTipY there), so easing Y too would visibly collapse the
+        // line to nothing the moment the bait holds still, well before any bite.
+        fishing.rodTipX = easeToward(fishing.rodTipX, fishing.baitX, ROD_EASE_PER_SEC * dt);
+      }
       const boundsWidth = tankRef.current
         ? tankRef.current.getBoundingClientRect().width || 1
         : 1;
@@ -635,17 +644,27 @@ export default function Aquarium() {
             a tap-and-release inside the band flash a bait sprite even though
             no cast happened. */}
         {(fishingRef.current.phase === 'casting' || fishingRef.current.phase === 'hooked') && (
-          <span
-            data-testid="bait"
-            className={styles.bait}
-            style={{
-              left: `${fishingRef.current.baitX * 100}%`,
-              top: `${fishingRef.current.baitY * 100}%`,
-            }}
-            aria-hidden="true"
-          >
-            🪱
-          </span>
+          <>
+            <svg className={styles.line} data-testid="line" aria-hidden="true">
+              <line
+                x1={`${fishingRef.current.rodTipX * 100}%`}
+                y1={`${fishingRef.current.rodTipY * 100}%`}
+                x2={`${fishingRef.current.baitX * 100}%`}
+                y2={`${fishingRef.current.baitY * 100}%`}
+              />
+            </svg>
+            <span
+              data-testid="bait"
+              className={styles.bait}
+              style={{
+                left: `${fishingRef.current.baitX * 100}%`,
+                top: `${fishingRef.current.baitY * 100}%`,
+              }}
+              aria-hidden="true"
+            >
+              🪱
+            </span>
+          </>
         )}
         {tank.creatures.map((c) => {
           const species = getSpecies(c.species);
