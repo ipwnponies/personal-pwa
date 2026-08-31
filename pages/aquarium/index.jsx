@@ -31,6 +31,7 @@ import {
   BITE_TICK_MS,
   generateHiddenAttraction,
   computeBiteChance,
+  catchFish,
 } from '../../lib/aquarium/fishing';
 import { createSound } from '../../lib/aquarium/sound';
 import { getDecorationType } from '../../lib/aquarium/decorations';
@@ -50,6 +51,22 @@ const GRAB_RADIUS = 0.06;
 const FISHING_TOOL_KEY = 'fishing';
 const SURFACE_LINE_FRAC = 0.12;
 const ROD_EASE_PER_SEC = 3;
+
+// Single source of truth for fishingRef's idle shape, shared by its initial
+// value and resetFishing() — a field added to only one of the two would
+// silently leave the other path producing a stale/undefined value.
+const createIdleFishingState = () => ({
+  phase: 'idle', // 'idle' | 'pending' | 'casting' | 'hooked'
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  baitX: 0.5,
+  baitY: SURFACE_LINE_FRAC,
+  rodTipX: 0.5,
+  rodTipY: SURFACE_LINE_FRAC,
+  hookedId: null,
+  lastBiteTick: 0,
+});
 
 const TOOLS = [
   { key: 'food', label: 'Food', emoji: '🍤', effect: '🍤' },
@@ -120,18 +137,7 @@ export default function Aquarium() {
   // trailing click (see handleTankPointerUp).
   const ignoredPointersRef = useRef(new Set());
   const moveStatesRef = useRef(new Map());
-  const fishingRef = useRef({
-    phase: 'idle', // 'idle' | 'pending' | 'casting' | 'hooked'
-    pointerId: null,
-    startX: 0,
-    startY: 0,
-    baitX: 0.5,
-    baitY: SURFACE_LINE_FRAC,
-    rodTipX: 0.5,
-    rodTipY: SURFACE_LINE_FRAC,
-    hookedId: null,
-    lastBiteTick: 0,
-  });
+  const fishingRef = useRef(createIdleFishingState());
   // Per-fish bite-race state for the current cast, kept outside React state
   // for the same reason as moveStatesRef: it changes on every bite tick and is
   // never persisted. hiddenAttraction is the fishing-side stand-in for
@@ -174,31 +180,33 @@ export default function Aquarium() {
     });
   }, []);
 
+  const resetFishing = () => {
+    // The whole bite race belongs to the cast that just ended: every fish gets
+    // a fresh hidden attraction next time out, so one unlucky roll can't make
+    // a fish uncatchable for the rest of the page's lifetime.
+    biteStatesRef.current.clear();
+    fishingRef.current = createIdleFishingState();
+    bumpFishingRender((n) => n + 1);
+  };
+
   // Switching tools reassigns which branch handles an in-flight pointer's
   // up/cancel/leave (the fishing guards check selectedTool before dragRef) —
   // without this reset, a decoration/paint drag left active on another
   // finger would never see its own release once the tool changes out from
   // under it, permanently stranding dragRef.current.active and freezing the
   // tank until reload.
+  //
+  // Switching away from Fishing needs the same treatment: once selectedTool
+  // is no longer 'fishing', the tank handlers stop routing to
+  // handleFishingPointerMove/Up at all, so a still-active cast (or a hooked
+  // fish) would otherwise never reach resetFishing — leaving a stuck bait/
+  // line on screen and, if a fish was hooked, that fish locked onto the
+  // frozen bait forever. resetFishing() is a no-op from 'idle', so calling
+  // it unconditionally is safe even when no cast was in progress.
   const selectTool = (key) => {
     dragRef.current = { active: false, lastSample: 0 };
+    resetFishing();
     commit((prev) => ({ ...prev, selectedTool: key }), null);
-  };
-
-  const resetFishing = () => {
-    fishingRef.current = {
-      phase: 'idle',
-      pointerId: null,
-      startX: 0,
-      startY: 0,
-      baitX: 0.5,
-      baitY: SURFACE_LINE_FRAC,
-      rodTipX: 0.5,
-      rodTipY: SURFACE_LINE_FRAC,
-      hookedId: null,
-      lastBiteTick: 0,
-    };
-    bumpFishingRender((n) => n + 1);
   };
 
   // Brief bounce/flash on the exact creature/spot a directed action touched.
@@ -231,6 +239,19 @@ export default function Aquarium() {
     setTimeout(() => {
       setUnlockHighlightKey((current) => (current === key ? null : current));
     }, UNLOCK_HIGHLIGHT_MS);
+  };
+
+  // Reels the hooked fish out of the tank and into the bucket. Defined here
+  // rather than beside resetFishing so it sits after the pulse/spawnEffect
+  // cue helpers it calls. The bite state is dropped along with the cast by
+  // resetFishing's clear() — a caught fish has no stake in the next cast's
+  // race, and the fish left behind get fresh hidden attractions next time out.
+  const landCatch = (creatureId) => {
+    const { baitX, baitY } = fishingRef.current;
+    pulse(creatureId);
+    spawnEffect(baitX, baitY, '🎣');
+    resetFishing();
+    commit((prev) => catchFish(prev, creatureId), 'sparkle');
   };
 
   // requestAnimationFrame movement loop: steers each fish toward the bait of
@@ -444,6 +465,14 @@ export default function Aquarium() {
     const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
     fishing.baitX = x;
     fishing.baitY = y;
+    // Reeling the bait back up through the surface band lands whatever is on
+    // the hook. Only 'hooked' lands: an empty line crossing back up is just a
+    // recast, and releasing instead (handleFishingPointerUp, which resets
+    // unconditionally) frees the fish at any phase.
+    if (fishing.phase === 'hooked' && y <= SURFACE_LINE_FRAC) {
+      landCatch(fishing.hookedId);
+      return;
+    }
     bumpFishingRender((n) => n + 1);
   };
 
