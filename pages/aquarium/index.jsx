@@ -94,6 +94,14 @@ export default function Aquarium() {
   const [pulsingIds, setPulsingIds] = useState(() => new Set());
   const [effects, setEffects] = useState([]);
   const [unlockHighlightKey, setUnlockHighlightKey] = useState(null);
+  // fishingRef below is mutated in place (like moveStatesRef/dragRef) rather
+  // than replaced via setState, so a pointer-driven phase/position change
+  // doesn't cause React to re-render on its own — the movement loop's own
+  // setTank ticks would eventually catch it up, but the gesture needs the
+  // surface line/bait to reflect it immediately, not on the next animation
+  // frame. This counter's value is never read; bumping it is only ever used
+  // to ask React to re-render with the ref's latest values.
+  const [, bumpFishingRender] = useState(0);
   const soundRef = useRef(null);
   const tankRef = useRef(null);
   const decorationPaletteRef = useRef(null);
@@ -105,6 +113,18 @@ export default function Aquarium() {
   // trailing click (see handleTankPointerUp).
   const ignoredPointersRef = useRef(new Set());
   const moveStatesRef = useRef(new Map());
+  const fishingRef = useRef({
+    phase: 'idle', // 'idle' | 'pending' | 'casting' | 'hooked'
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    baitX: 0.5,
+    baitY: SURFACE_LINE_FRAC,
+    rodTipX: 0.5,
+    rodTipY: SURFACE_LINE_FRAC,
+    hookedId: null,
+    lastBiteTick: 0,
+  });
 
   // Mount: load, catch up offline decay, wire sound.
   useEffect(() => {
@@ -141,7 +161,32 @@ export default function Aquarium() {
     });
   }, []);
 
-  const selectTool = (key) => commit((prev) => ({ ...prev, selectedTool: key }), null);
+  // Switching tools reassigns which branch handles an in-flight pointer's
+  // up/cancel/leave (the fishing guards check selectedTool before dragRef) —
+  // without this reset, a decoration/paint drag left active on another
+  // finger would never see its own release once the tool changes out from
+  // under it, permanently stranding dragRef.current.active and freezing the
+  // tank until reload.
+  const selectTool = (key) => {
+    dragRef.current = { active: false, lastSample: 0 };
+    commit((prev) => ({ ...prev, selectedTool: key }), null);
+  };
+
+  const resetFishing = () => {
+    fishingRef.current = {
+      phase: 'idle',
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      baitX: 0.5,
+      baitY: SURFACE_LINE_FRAC,
+      rodTipX: 0.5,
+      rodTipY: SURFACE_LINE_FRAC,
+      hookedId: null,
+      lastBiteTick: 0,
+    };
+    bumpFishingRender((n) => n + 1);
+  };
 
   // Brief bounce/flash on the exact creature/spot a directed action touched.
   const pulse = (id) => {
@@ -284,9 +329,46 @@ export default function Aquarium() {
     commit((prev) => wipeDirtSpot(prev, id), unlocked ? 'unlock' : 'sparkle');
   };
 
-  const handleFishingPointerDown = () => {};
-  const handleFishingPointerMove = () => {};
-  const handleFishingPointerUp = () => {};
+  const handleFishingPointerDown = (e) => {
+    if (fishingRef.current.phase !== 'idle') return;
+    const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+    if (y > SURFACE_LINE_FRAC) return;
+    if (typeof tankRef.current.setPointerCapture === 'function') {
+      tankRef.current.setPointerCapture(e.pointerId);
+    }
+    fishingRef.current = {
+      ...fishingRef.current,
+      phase: 'pending',
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      baitX: x,
+      baitY: y,
+      rodTipX: x,
+      rodTipY: SURFACE_LINE_FRAC,
+      hookedId: null,
+      lastBiteTick: Date.now(),
+    };
+    bumpFishingRender((n) => n + 1);
+  };
+
+  const handleFishingPointerMove = (e) => {
+    const fishing = fishingRef.current;
+    if (fishing.pointerId !== e.pointerId || fishing.phase === 'idle') return;
+    if (fishing.phase === 'pending') {
+      if (e.clientY - fishing.startY < MIN_DRAG_PX) return;
+      fishing.phase = 'casting';
+    }
+    const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+    fishing.baitX = x;
+    fishing.baitY = y;
+    bumpFishingRender((n) => n + 1);
+  };
+
+  const handleFishingPointerUp = (e) => {
+    if (fishingRef.current.pointerId !== e.pointerId) return;
+    resetFishing();
+  };
 
   // Any tap inside the tank drops the selected tool's item at that point —
   // including a tap that lands on a fish, per the "guaranteed feed this one"
@@ -534,6 +616,32 @@ export default function Aquarium() {
         onPointerCancel={handleTankPointerCancel}
         role="presentation"
       >
+        {tank.selectedTool === FISHING_TOOL_KEY && (
+          <div
+            className={styles.surfaceLine}
+            style={{ top: `${SURFACE_LINE_FRAC * 100}%` }}
+            aria-hidden="true"
+          />
+        )}
+        {/* Deliberately 'casting' || 'hooked', not !== 'idle' — the bait must
+            stay hidden during 'pending', the brief window between
+            pointer-down in the surface band and the drag actually crossing
+            MIN_DRAG_PX downward. Showing it on pointer-down alone would make
+            a tap-and-release inside the band flash a bait sprite even though
+            no cast happened. */}
+        {(fishingRef.current.phase === 'casting' || fishingRef.current.phase === 'hooked') && (
+          <span
+            data-testid="bait"
+            className={styles.bait}
+            style={{
+              left: `${fishingRef.current.baitX * 100}%`,
+              top: `${fishingRef.current.baitY * 100}%`,
+            }}
+            aria-hidden="true"
+          >
+            🪱
+          </span>
+        )}
         {tank.creatures.map((c) => {
           const species = getSpecies(c.species);
           const size = species.sizePx[c.stage];

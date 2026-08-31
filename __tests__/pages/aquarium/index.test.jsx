@@ -247,6 +247,33 @@ describe('Aquarium page decoration pointer dispatch', () => {
     expect(result.decorations).toHaveLength(1);
   });
 
+  it('switching tools mid-drag does not strand dragRef for later gestures', () => {
+    // Simulates a second finger tapping the Fishing button while pointer 1's
+    // decoration drag is still active — the fishing guards in
+    // handleTankPointerUp/Cancel/Leave check selectedTool before dragRef, so
+    // without a reset on tool switch, pointer 1's eventual release would be
+    // routed to handleFishingPointerUp (a no-op for an untracked pointer)
+    // instead of clearing dragRef, permanently freezing the tank.
+    seedTank({
+      selectedTool: 'seaweed',
+      decorations: [{ id: 'd1', type: 'seaweed', x: 0.5, y: 0.5 }],
+    });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    fireEvent.pointerDown(tank, { clientX: 200, clientY: 150, pointerId: 1 });
+    fireEvent.click(screen.getByRole('button', { name: /fishing/i }));
+    // Pointer 1's release now goes through the fishing tool's guard, not the
+    // decoration-drag cleanup — this is the strand, if selectTool doesn't fix it.
+    fireEvent.pointerUp(tank, { clientX: 200, clientY: 150, pointerId: 1 });
+    // Switch to a plain tap-to-drop tool and try a fresh gesture on a new
+    // pointer: this only succeeds if dragRef.current.active isn't stuck true.
+    fireEvent.click(screen.getByRole('button', { name: /food/i }));
+    fireEvent.pointerDown(tank, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(tank, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.click(tank, { clientX: 100, clientY: 100 });
+    expect(screen.getAllByTestId('foodDrop')).toHaveLength(1);
+  });
+
   it('a tap (no movement) on a placed decoration does not move or remove it', () => {
     seedTank({
       selectedTool: 'seaweed',
@@ -448,5 +475,50 @@ describe('Aquarium page decoration rendering and feedback', () => {
     fireEvent.click(tank, { clientX: 200, clientY: 150 });
     expect(readTank().decorations).toHaveLength(6);
     expect(play).toHaveBeenCalledWith('refused');
+  });
+});
+
+describe('Aquarium page fishing gesture', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => TANK_RECT);
+  });
+
+  it('a pointer-down below the surface band does not start a cast', () => {
+    seedTank({ selectedTool: 'fishing' });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    // TANK_RECT height is 300; below the 12% band is y > 36.
+    fireEvent.pointerDown(tank, { clientX: 200, clientY: 150, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 200, clientY: 200, pointerId: 1 });
+    expect(screen.queryByTestId('bait')).not.toBeInTheDocument();
+  });
+
+  it('a downward drag starting within the surface band starts a cast and shows the bait', () => {
+    seedTank({ selectedTool: 'fishing' });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    fireEvent.pointerDown(tank, { clientX: 200, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 200, clientY: 100, pointerId: 1 });
+    expect(screen.getByTestId('bait')).toBeInTheDocument();
+  });
+
+  it('an upward or sideways move from the surface band does not start a cast', () => {
+    seedTank({ selectedTool: 'fishing' });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    fireEvent.pointerDown(tank, { clientX: 200, clientY: 20, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 300, clientY: 20, pointerId: 1 });
+    expect(screen.queryByTestId('bait')).not.toBeInTheDocument();
+  });
+
+  it('releasing during a cast with no bite retracts the line', () => {
+    seedTank({ selectedTool: 'fishing' });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    fireEvent.pointerDown(tank, { clientX: 200, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 200, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(tank, { clientX: 200, clientY: 100, pointerId: 1 });
+    expect(screen.queryByTestId('bait')).not.toBeInTheDocument();
   });
 });
