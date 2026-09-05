@@ -22,7 +22,7 @@ pages/           Next.js pages (file-based routing)
 components/      Shared React components (layout, date formatter, SW registration)
 lib/             Utility modules (blog post parsing)
 worker/          Custom service worker logic (start-URL caching)
-scripts/         Build-time scripts (fs.rename patch, SW precache injection)
+scripts/         Build-time scripts (splash generation, fs.rename patch, SW precache injection)
 posts/           Markdown blog content (parsed with gray-matter + remark)
 public/          Static assets, PWA manifest, generated sw.js
 styles/          Global CSS and CSS Module utilities
@@ -65,9 +65,9 @@ styles/          Global CSS and CSS Module utilities
 ## Build Pipeline Details
 
 The build is non-standard. `npm run build` does three things in sequence:
-1. `next build` with `scripts/patch-rename.js` required (patches `fs.rename` for cross-device moves)
-2. `scripts/patch-sw-precache.js` injects prerendered routes into the Workbox precache manifest in `public/sw.js`
-3. `next export` generates static HTML into `./out`
+1. `scripts/generate-splash.js` generates iOS splash-screen PNGs into `public/icons/` from the app icons
+2. `next build --no-lint` with `scripts/patch-rename.js` required (patches `fs.rename` for cross-device moves). Lint is skipped here, not just uncovered by CI. Static export to `./out` happens as part of this step (`output: 'export'` in `next.config.js`) — there is no separate `next export` command
+3. `scripts/patch-sw-precache.js` injects prerendered routes into the Workbox precache manifest in `public/sw.js`
 
 Do not modify build scripts without understanding the precache injection flow.
 
