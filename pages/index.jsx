@@ -40,6 +40,9 @@ export default function Home({ allPostsData }) {
           <Link href="/aquarium/">Aquarium App</Link>
         </p>
         <p>
+          <Link href="/tamagotchi/">Tamagotchi App</Link>
+        </p>
+        <p>
           <Link href="/settings">Settings</Link>
         </p>
       </section>
