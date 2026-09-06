@@ -20,6 +20,7 @@ Virtual pet fish tank. Tap/drag to feed or play, dirt spots accumulate and need 
 ## Conventions
 
 - Tank state lives in a single `tank` object in React state, persisted via `saveTank` on every `commit`. The 2s interval tick and the animation frame loop both write through `setTank`, but only the interval tick persists to storage — per-frame movement is state-only until the next tick.
+- Tests asserting on a movement-loop effect (position, drop consumption, or a released `seekTargetId` claim — observed via its consequence, e.g. a drop's testid disappearing, since it isn't itself rendered) should check live state (`screen.getByTestId`/`queryAllByTestId`) rather than `readTank()` — storage lags until the next 2s tick or the next `commit`.
 - Movement state (`moveStatesRef`) is a `Map` keyed by creature id, kept outside React state deliberately — it updates every animation frame and would be too hot for `setState`.
 - New need/threshold logic should derive from the same constants the simulation module exports (see `WANT_BUBBLE_THRESHOLD` deriving from `MET_THRESHOLD`) rather than introducing new magic numbers, so the UI cue and the actual seek-eligibility test can't drift apart.
 - Drag interactions are pointer-event based, not native HTML5 drag-and-drop; `document.elementFromPoint` is used to detect drags across dirt spots, which jsdom doesn't implement — tests should account for this gap.
