@@ -1,9 +1,10 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import Tamagotchi from '../../../pages/tamagotchi/index';
 import { createSound } from '../../../lib/tamagotchi/sound';
 import { NEED_MAX } from '../../../lib/tamagotchi/simulation';
+import { MIN_PLAY_AMOUNT } from '../../../lib/tamagotchi/minigame';
 
 vi.mock('next/router', () => ({
   useRouter: () => ({ basePath: '' }),
@@ -56,6 +57,10 @@ describe('Tamagotchi page', () => {
     localStorage.clear();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders the pet and care actions', () => {
     render(<Tamagotchi />);
     expect(screen.getByTestId('pet')).toBeInTheDocument();
@@ -72,11 +77,57 @@ describe('Tamagotchi page', () => {
     expect(latestPlaySpy()).toHaveBeenCalledWith('nom');
   });
 
-  it('playing raises happiness', () => {
+  it('tapping the pet raises happiness', () => {
     seedPet({ happiness: 10 });
     render(<Tamagotchi />);
-    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    fireEvent.click(screen.getByTestId('pet'));
     expect(readPet().happiness).toBeGreaterThan(10);
+  });
+
+  it('opens the minigame overlay from the palette Play button', () => {
+    render(<Tamagotchi />);
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    expect(screen.getByTestId('minigame-overlay')).toBeInTheDocument();
+  });
+
+  it('completing a minigame session with every round missed still raises happiness by the minimum amount', () => {
+    vi.useFakeTimers();
+    seedPet({ happiness: 0 });
+    render(<Tamagotchi />);
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    act(() => {
+      vi.advanceTimersByTime(10000);
+    });
+    expect(readPet().happiness).toBe(MIN_PLAY_AMOUNT);
+    expect(screen.queryByTestId('minigame-overlay')).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('a well-timed tap scores above the minimum reward', () => {
+    vi.useFakeTimers();
+    seedPet({ happiness: 0 });
+    render(<Tamagotchi />);
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Tap' }));
+    act(() => {
+      vi.advanceTimersByTime(10000);
+    });
+    expect(readPet().happiness).toBeGreaterThan(MIN_PLAY_AMOUNT);
+    vi.useRealTimers();
+  });
+
+  it('canceling the minigame overlay does not change happiness', () => {
+    vi.useFakeTimers();
+    seedPet({ happiness: 50 });
+    render(<Tamagotchi />);
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(readPet().happiness).toBe(50);
+    expect(screen.queryByTestId('minigame-overlay')).not.toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it('toggling sleep flips the button label and persisted state', () => {

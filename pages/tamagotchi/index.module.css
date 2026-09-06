@@ -101,3 +101,40 @@
   font-size: 2rem;
   cursor: pointer;
 }
+
+.minigameOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 1rem;
+  color: #eee;
+}
+
+.minigameClose {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.minigameTap {
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  width: 6rem;
+  height: 6rem;
+  font-size: 2.5rem;
+  cursor: pointer;
+}
