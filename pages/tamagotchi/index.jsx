@@ -16,6 +16,7 @@ import {
   MET_THRESHOLD,
   NEED_FLOOR,
   NEED_MAX,
+  PET_TAP_AMOUNT,
 } from '../../lib/tamagotchi/simulation';
 import { createSound } from '../../lib/tamagotchi/sound';
 
@@ -79,7 +80,7 @@ export default function Tamagotchi() {
   }, []);
 
   const handleFeed = () => commit((prev) => feedPet(prev), 'nom');
-  const handlePlay = () => commit((prev) => playWithPet(prev), 'play');
+  const handlePlay = () => commit((prev) => playWithPet(prev, PET_TAP_AMOUNT), 'play');
   const handleClean = () => commit((prev) => cleanPoop(prev), 'clean');
   const handleSleepToggle = () => commit((prev) => toggleSleep(prev), 'sleep');
   const toggleSound = () =>

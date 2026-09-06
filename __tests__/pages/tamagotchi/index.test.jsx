@@ -36,6 +36,12 @@ const basePet = (overrides = {}) => ({
   poopMinutes: 0,
   hasPoop: false,
   soundOn: false,
+  feedCount: 0,
+  playCount: 0,
+  sleepMinutes: 0,
+  adultForm: null,
+  sick: false,
+  poopUncleanMinutes: 0,
   ...overrides,
 });
 
