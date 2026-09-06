@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import Aquarium from '../../../pages/aquarium/index';
 import { createSound } from '../../../lib/aquarium/sound';
 
@@ -529,5 +529,114 @@ describe('Aquarium page fishing gesture', () => {
     fireEvent.pointerDown(tank, { clientX: 200, clientY: 10, pointerId: 1 });
     fireEvent.pointerMove(tank, { clientX: 200, clientY: 200, pointerId: 1 });
     expect(screen.getByTestId('line')).toBeInTheDocument();
+  });
+
+  // Unlike the gesture tests above, this one lets the real movement loop run:
+  // vitest.setup.js installs no requestAnimationFrame polyfill or fake timers,
+  // so the loop runs on jsdom's native rAF and the test waits on the wall
+  // clock for real frames (wrapped in act so the frames' setTank updates are
+  // not flagged as unwrapped React updates).
+  it('a fish within range of the bait swims toward it instead of wandering', async () => {
+    // Pinning Math.random makes the frame loop deterministic instead of
+    // racing a random initial heading and a random wander target: the fish
+    // starts swimming straight down, its wander target sits up-and-left, and
+    // the bait sits directly right — so "swam toward the bait" and "kept
+    // wandering" separate cleanly along x. The same value also fixes the
+    // hidden attraction at 0.25, which holds every bite roll below its own
+    // threshold: this test is about steering, not hooking (Task 8 covers the
+    // catch).
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.25);
+    seedTank({
+      selectedTool: 'fishing',
+      creatures: [{
+        id: 'c1',
+        species: 'clownfish',
+        bornAt: 0,
+        stage: 'baby',
+        hunger: 100,
+        happiness: 100,
+        wellMetSince: null,
+        seekTargetId: null,
+        x: 0.5,
+        y: 0.5,
+      }],
+    });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    // Cast to the fish's right: clientX 300 in a 400-wide TANK_RECT is
+    // tank-fraction 0.75, clientY 150 in a 300-tall one is 0.5 — the fish's
+    // own row, 0.25 away and so inside FISHING_DETECTION_RADIUS (0.35).
+    fireEvent.pointerDown(tank, { clientX: 300, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 300, clientY: 150, pointerId: 1 });
+    const before = Number(screen.getByTestId('creature').style.left.replace('%', ''));
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1200);
+      });
+    });
+    randomSpy.mockRestore();
+    const after = Number(screen.getByTestId('creature').style.left.replace('%', ''));
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('a fish lured away by the bait releases its claimed drop so another fish can take it', async () => {
+    // Fixed at 0.99 for every rng draw: hiddenAttraction and the bite roll
+    // both draw from Math.random, and BITE_CHANCE_BASE (0.15) times any
+    // attraction stays well under 0.99, so no bite ever fires — this test is
+    // about the claim release, not a catch.
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    seedTank({
+      selectedTool: 'fishing',
+      foodDrops: [{ id: 'd1', x: 0.9, y: 0.9, createdAt: 0 }],
+      creatures: [
+        {
+          id: 'a1', species: 'clownfish', bornAt: 0, stage: 'baby',
+          hunger: 30, happiness: 100, wellMetSince: null, seekTargetId: 'd1', x: 0.15, y: 0.15,
+        },
+        {
+          id: 'b1', species: 'clownfish', bornAt: 0, stage: 'baby',
+          hunger: 30, happiness: 100, wellMetSince: null, seekTargetId: null, x: 0.9, y: 0.88,
+        },
+      ],
+    });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    // Cast right next to a1 (tank-fraction ~0.15, 0.2) so a1 is immediately
+    // lured — well inside FISHING_DETECTION_RADIUS (0.35) of its (0.15, 0.15).
+    fireEvent.pointerDown(tank, { clientX: 60, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 60, clientY: 60, pointerId: 1 });
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 1200);
+      });
+    });
+    randomSpy.mockRestore();
+    // b1, already right next to d1 and just as hungry, could only reach and
+    // consume it if a1's stale claim was released once a1 got lured away —
+    // before the fix, a1 kept seekTargetId set for the whole cast even
+    // though it was busy chasing the bait, locking b1 out of the only drop
+    // in the tank for that entire time. Checked against live state, not
+    // storage: per-frame movement-loop updates (including drop consumption)
+    // aren't persisted until the next 2s tick.
+    expect(screen.queryAllByTestId('foodDrop')).toHaveLength(0);
+  });
+
+  it("the line's vertical anchor stays pinned to the surface while a cast is held steady", async () => {
+    seedTank({ selectedTool: 'fishing' });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    fireEvent.pointerDown(tank, { clientX: 200, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 200, clientY: 200, pointerId: 1 });
+    const initialY1 = screen.getByTestId('line').querySelector('line').getAttribute('y1');
+    // Only rodTipX should ease toward the bait over time; rodTipY is meant to
+    // stay anchored at the surface line the whole cast, not collapse onto the
+    // bait's y the moment it holds still.
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 500);
+      });
+    });
+    const laterY1 = screen.getByTestId('line').querySelector('line').getAttribute('y1');
+    expect(laterY1).toBe(initialY1);
   });
 });

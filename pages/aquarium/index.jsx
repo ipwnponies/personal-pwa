@@ -26,6 +26,12 @@ import {
   removeDecoration,
 } from '../../lib/aquarium/simulation';
 import { createMovementState, stepMovement, wobbleOffset, easeToward, CONTACT_RADIUS } from '../../lib/aquarium/movement';
+import {
+  FISHING_DETECTION_RADIUS,
+  BITE_TICK_MS,
+  generateHiddenAttraction,
+  computeBiteChance,
+} from '../../lib/aquarium/fishing';
 import { createSound } from '../../lib/aquarium/sound';
 import { getDecorationType } from '../../lib/aquarium/decorations';
 
@@ -126,6 +132,12 @@ export default function Aquarium() {
     hookedId: null,
     lastBiteTick: 0,
   });
+  // Per-fish bite-race state for the current cast, kept outside React state
+  // for the same reason as moveStatesRef: it changes on every bite tick and is
+  // never persisted. hiddenAttraction is the fishing-side stand-in for
+  // computeAffinity (a fish's unadvertised interest in the bait), prevDist
+  // feeds computeBiteChance's "got closer since last tick" snowball.
+  const biteStatesRef = useRef(new Map());
 
   // Mount: load, catch up offline decay, wire sound.
   useEffect(() => {
@@ -221,8 +233,9 @@ export default function Aquarium() {
     }, UNLOCK_HIGHLIGHT_MS);
   };
 
-  // requestAnimationFrame movement loop: steers each fish toward its claimed
-  // drop (or idle wander), consuming a drop on contact. Position updates every
+  // requestAnimationFrame movement loop: steers each fish toward the bait of
+  // an active cast, else its claimed drop, else an idle wander — consuming a
+  // drop on contact, and running the cast's bite rolls. Position updates every
   // frame in React state; only the existing 2s tick (above) writes to storage.
   useEffect(() => {
     if (!tank) return undefined;
@@ -252,14 +265,42 @@ export default function Aquarium() {
           if (!moveStatesRef.current.has(c.id)) {
             moveStatesRef.current.set(c.id, createMovementState(c.x, c.y));
           }
-          const found = c.seekTargetId ? findDrop(claimed, c.seekTargetId) : null;
-          const targetPoint = found ? { x: found.drop.x, y: found.drop.y } : null;
+          const isHooked = fishing.phase === 'hooked' && fishing.hookedId === c.id;
+          const dist = fishing.phase !== 'idle'
+            ? Math.hypot(c.x - fishing.baitX, c.y - fishing.baitY)
+            : Infinity;
+          const isLured = fishing.phase === 'casting' && dist <= FISHING_DETECTION_RADIUS;
+          let targetPoint = null;
           // A creature not currently seeking never reaches stepMovement's
           // seek branch, so this value is unused wander-side — 1 just keeps
           // the call self-explanatory without a misleading "0".
-          const affinity = found
-            ? computeAffinity(found.type === 'food' ? c.hunger : c.happiness)
-            : 1;
+          let affinity = 1;
+          // Only a food/toy drop is edible; the bait is a target the fish
+          // steers at but never consumes, so `found` stays null while lured or
+          // hooked and the contact/consume check below skips it.
+          let found = null;
+          if (isHooked) {
+            targetPoint = { x: fishing.baitX, y: fishing.baitY };
+            affinity = 1;
+          } else if (isLured) {
+            if (!biteStatesRef.current.has(c.id)) {
+              biteStatesRef.current.set(c.id, {
+                hiddenAttraction: generateHiddenAttraction(Math.random),
+                prevDist: dist,
+              });
+            }
+            targetPoint = { x: fishing.baitX, y: fishing.baitY };
+            // The bait outranks whatever drop this fish had claimed: a lure
+            // that loses to a shrimp already in the tank would never read as
+            // a race.
+            affinity = biteStatesRef.current.get(c.id).hiddenAttraction;
+          } else {
+            found = c.seekTargetId ? findDrop(claimed, c.seekTargetId) : null;
+            targetPoint = found ? { x: found.drop.x, y: found.drop.y } : null;
+            affinity = found
+              ? computeAffinity(found.type === 'food' ? c.hunger : c.happiness)
+              : 1;
+          }
           const stepped = stepMovement(
             moveStatesRef.current.get(c.id),
             dt,
@@ -270,7 +311,7 @@ export default function Aquarium() {
             affinity,
           );
           moveStatesRef.current.set(c.id, stepped);
-          if (targetPoint && Math.hypot(stepped.x - targetPoint.x, stepped.y - targetPoint.y)
+          if (found && Math.hypot(stepped.x - targetPoint.x, stepped.y - targetPoint.y)
             <= CONTACT_RADIUS) {
             events.push({
               creatureId: c.id,
@@ -280,8 +321,52 @@ export default function Aquarium() {
               y: stepped.y,
             });
           }
-          return { ...c, x: stepped.x, y: stepped.y };
+          // A fish diverted by the bait (lured or hooked) isn't pursuing its
+          // previously claimed drop — release that claim so assignSeekTargets
+          // can hand the drop to another hungry/bored fish instead of leaving
+          // it reserved-but-untouched for the whole cast.
+          return {
+            ...c,
+            x: stepped.x,
+            y: stepped.y,
+            seekTargetId: (isHooked || isLured) ? null : c.seekTargetId,
+          };
         });
+
+        // The bite race: every BITE_TICK_MS each in-range fish rolls for the
+        // hook, nearest first, and the first success ends the round —
+        // there's one line in the water, so only one fish can be hooked.
+        if (fishing.phase === 'casting' && now - fishing.lastBiteTick >= BITE_TICK_MS) {
+          fishing.lastBiteTick = now;
+          const eligible = positioned
+            .map((c) => ({ c, dist: Math.hypot(c.x - fishing.baitX, c.y - fishing.baitY) }))
+            .filter(({ dist }) => dist <= FISHING_DETECTION_RADIUS)
+            .sort((a, b) => a.dist - b.dist);
+          eligible.some(({ c, dist }) => {
+            // A fish that only just entered range this frame has no seeded
+            // state yet; treat this tick as its first, with no snowball.
+            const prior = biteStatesRef.current.get(c.id)
+              || { hiddenAttraction: generateHiddenAttraction(Math.random), prevDist: dist };
+            const gotCloser = dist < prior.prevDist;
+            const chance = computeBiteChance(
+              dist,
+              FISHING_DETECTION_RADIUS,
+              prior.hiddenAttraction,
+              gotCloser,
+            );
+            biteStatesRef.current.set(c.id, {
+              hiddenAttraction: prior.hiddenAttraction,
+              prevDist: dist,
+            });
+            if (Math.random() < chance) {
+              fishing.phase = 'hooked';
+              fishing.hookedId = c.id;
+              return true;
+            }
+            return false;
+          });
+        }
+
         let next = { ...claimed, creatures: positioned };
         events.forEach((ev) => {
           const before = next.unlockedDecorationTypes.length;
