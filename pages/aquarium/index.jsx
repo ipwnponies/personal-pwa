@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 import styles from './index.module.css';
 import { pwaMetaTags } from '../../components/layout';
@@ -20,12 +21,22 @@ import {
   MET_THRESHOLD,
   NEED_FLOOR,
   NEED_MAX,
+  TANK_CAP,
   isDecorationCapReached,
   placeDecoration,
   moveDecoration,
   removeDecoration,
 } from '../../lib/aquarium/simulation';
-import { createMovementState, stepMovement, wobbleOffset, CONTACT_RADIUS } from '../../lib/aquarium/movement';
+import { createMovementState, stepMovement, wobbleOffset, easeToward, CONTACT_RADIUS } from '../../lib/aquarium/movement';
+import {
+  FISHING_DETECTION_RADIUS,
+  BITE_TICK_MS,
+  generateHiddenAttraction,
+  computeBiteChance,
+  catchFish,
+  returnFish,
+  deleteFromBucket,
+} from '../../lib/aquarium/fishing';
 import { createSound } from '../../lib/aquarium/sound';
 import { getDecorationType } from '../../lib/aquarium/decorations';
 
@@ -41,6 +52,26 @@ const MIN_DRAG_PX = 12;
 // decorations aren't a movement/fish concept — a preschooler's imprecise tap
 // still grabs the item.
 const GRAB_RADIUS = 0.06;
+const FISHING_TOOL_KEY = 'fishing';
+const DISCARD_HOLD_MS = 500;
+const SURFACE_LINE_FRAC = 0.12;
+const ROD_EASE_PER_SEC = 3;
+
+// Single source of truth for fishingRef's idle shape, shared by its initial
+// value and resetFishing() — a field added to only one of the two would
+// silently leave the other path producing a stale/undefined value.
+const createIdleFishingState = () => ({
+  phase: 'idle', // 'idle' | 'pending' | 'casting' | 'hooked'
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  baitX: 0.5,
+  baitY: SURFACE_LINE_FRAC,
+  rodTipX: 0.5,
+  rodTipY: SURFACE_LINE_FRAC,
+  hookedId: null,
+  lastBiteTick: 0,
+});
 
 const TOOLS = [
   { key: 'food', label: 'Food', emoji: '🍤', effect: '🍤' },
@@ -92,6 +123,14 @@ export default function Aquarium() {
   const [pulsingIds, setPulsingIds] = useState(() => new Set());
   const [effects, setEffects] = useState([]);
   const [unlockHighlightKey, setUnlockHighlightKey] = useState(null);
+  // fishingRef below is mutated in place (like moveStatesRef/dragRef) rather
+  // than replaced via setState, so a pointer-driven phase/position change
+  // doesn't cause React to re-render on its own — the movement loop's own
+  // setTank ticks would eventually catch it up, but the gesture needs the
+  // surface line/bait to reflect it immediately, not on the next animation
+  // frame. This counter's value is never read; bumping it is only ever used
+  // to ask React to re-render with the ref's latest values.
+  const [, bumpFishingRender] = useState(0);
   const soundRef = useRef(null);
   const tankRef = useRef(null);
   const decorationPaletteRef = useRef(null);
@@ -103,6 +142,23 @@ export default function Aquarium() {
   // trailing click (see handleTankPointerUp).
   const ignoredPointersRef = useRef(new Set());
   const moveStatesRef = useRef(new Map());
+  const fishingRef = useRef(createIdleFishingState());
+  // Per-fish bite-race state for the current cast, kept outside React state
+  // for the same reason as moveStatesRef: it changes on every bite tick and is
+  // never persisted. hiddenAttraction is the fishing-side stand-in for
+  // computeAffinity (a fish's unadvertised interest in the bait), prevDist
+  // feeds computeBiteChance's "got closer since last tick" snowball.
+  const biteStatesRef = useRef(new Map());
+  // Single-slot by design, like dragRef above: only one bucket-fish drag is
+  // tracked at a time. A second concurrent drag on a different fish would
+  // overwrite this and could cancel the first one's pending discard hold —
+  // accepted as an unlikely multi-touch edge case rather than adding
+  // per-pointer tracking for a gesture two fingers are unlikely to both
+  // reach for on the same bucket tray.
+  const bucketDragRef = useRef({ active: false, creatureId: null, pointerId: null });
+  const trashTimerRef = useRef(null);
+  const trashRef = useRef(null);
+  const [holdingTrashId, setHoldingTrashId] = useState(null);
 
   // Mount: load, catch up offline decay, wire sound.
   useEffect(() => {
@@ -130,6 +186,11 @@ export default function Aquarium() {
     // stable across renders.
   }, [tank !== null]);
 
+  // A pending discard-hold timer (armed in handleBucketPointerMove) has no
+  // other teardown path — navigating away mid-hold would otherwise leave it
+  // running and fire its flushSync'd delete against a torn-down page.
+  useEffect(() => () => clearTimeout(trashTimerRef.current), []);
+
   const commit = useCallback((updater, cue) => {
     setTank((prev) => {
       if (!prev) return prev;
@@ -139,7 +200,41 @@ export default function Aquarium() {
     });
   }, []);
 
-  const selectTool = (key) => commit((prev) => ({ ...prev, selectedTool: key }), null);
+  const resetFishing = () => {
+    // The whole bite race belongs to the cast that just ended: every fish gets
+    // a fresh hidden attraction next time out, so one unlucky roll can't make
+    // a fish uncatchable for the rest of the page's lifetime.
+    biteStatesRef.current.clear();
+    fishingRef.current = createIdleFishingState();
+    bumpFishingRender((n) => n + 1);
+  };
+
+  // Switching tools reassigns which branch handles an in-flight pointer's
+  // up/cancel/leave (the fishing guards check selectedTool before dragRef) —
+  // without this reset, a decoration/paint drag left active on another
+  // finger would never see its own release once the tool changes out from
+  // under it, permanently stranding dragRef.current.active and freezing the
+  // tank until reload.
+  //
+  // Switching away from Fishing needs the same treatment: once selectedTool
+  // is no longer 'fishing', the tank handlers stop routing to
+  // handleFishingPointerMove/Up at all, so a still-active cast (or a hooked
+  // fish) would otherwise never reach resetFishing — leaving a stuck bait/
+  // line on screen and, if a fish was hooked, that fish locked onto the
+  // frozen bait forever. resetFishing() is a no-op from 'idle', so calling
+  // it unconditionally is safe even when no cast was in progress.
+  const selectTool = (key) => {
+    // A pointer stranded mid-gesture by this reset still gets its own
+    // pointerup/click later — route it through the same "ignored pointer"
+    // suppression as a rejected second touch (handleTankPointerDown) so that
+    // trailing click doesn't fall through to a plain tap-to-drop and place an
+    // item at wherever the stranded pointer happens to release.
+    if (dragRef.current.active) ignoredPointersRef.current.add(dragRef.current.pointerId);
+    if (fishingRef.current.pointerId != null) ignoredPointersRef.current.add(fishingRef.current.pointerId);
+    dragRef.current = { active: false, lastSample: 0 };
+    resetFishing();
+    commit((prev) => ({ ...prev, selectedTool: key }), null);
+  };
 
   // Brief bounce/flash on the exact creature/spot a directed action touched.
   const pulse = (id) => {
@@ -173,8 +268,22 @@ export default function Aquarium() {
     }, UNLOCK_HIGHLIGHT_MS);
   };
 
-  // requestAnimationFrame movement loop: steers each fish toward its claimed
-  // drop (or idle wander), consuming a drop on contact. Position updates every
+  // Reels the hooked fish out of the tank and into the bucket. Defined here
+  // rather than beside resetFishing so it sits after the pulse/spawnEffect
+  // cue helpers it calls. The bite state is dropped along with the cast by
+  // resetFishing's clear() — a caught fish has no stake in the next cast's
+  // race, and the fish left behind get fresh hidden attractions next time out.
+  const landCatch = (creatureId) => {
+    const { baitX, baitY } = fishingRef.current;
+    pulse(creatureId);
+    spawnEffect(baitX, baitY, '🎣');
+    resetFishing();
+    commit((prev) => catchFish(prev, creatureId), 'sparkle');
+  };
+
+  // requestAnimationFrame movement loop: steers each fish toward the bait of
+  // an active cast, else its claimed drop, else an idle wander — consuming a
+  // drop on contact, and running the cast's bite rolls. Position updates every
   // frame in React state; only the existing 2s tick (above) writes to storage.
   useEffect(() => {
     if (!tank) return undefined;
@@ -183,6 +292,15 @@ export default function Aquarium() {
     const loop = (time) => {
       const dt = lastTime == null ? 0 : Math.min((time - lastTime) / 1000, 0.1);
       lastTime = time;
+      const fishing = fishingRef.current;
+      if (fishing.phase !== 'idle') {
+        // Only the horizontal lag eases toward the bait — the rod tip is
+        // anchored to the surface line (handleFishingPointerDown/
+        // createIdleFishingState both pin rodTipY there), so easing Y too
+        // would visibly collapse the line to nothing the moment the bait
+        // holds still, well before any bite.
+        fishing.rodTipX = easeToward(fishing.rodTipX, fishing.baitX, ROD_EASE_PER_SEC * dt);
+      }
       const boundsWidth = tankRef.current
         ? tankRef.current.getBoundingClientRect().width || 1
         : 1;
@@ -196,14 +314,42 @@ export default function Aquarium() {
           if (!moveStatesRef.current.has(c.id)) {
             moveStatesRef.current.set(c.id, createMovementState(c.x, c.y));
           }
-          const found = c.seekTargetId ? findDrop(claimed, c.seekTargetId) : null;
-          const targetPoint = found ? { x: found.drop.x, y: found.drop.y } : null;
+          const isHooked = fishing.phase === 'hooked' && fishing.hookedId === c.id;
+          const dist = fishing.phase !== 'idle'
+            ? Math.hypot(c.x - fishing.baitX, c.y - fishing.baitY)
+            : Infinity;
+          const isLured = fishing.phase === 'casting' && dist <= FISHING_DETECTION_RADIUS;
+          let targetPoint = null;
           // A creature not currently seeking never reaches stepMovement's
           // seek branch, so this value is unused wander-side — 1 just keeps
           // the call self-explanatory without a misleading "0".
-          const affinity = found
-            ? computeAffinity(found.type === 'food' ? c.hunger : c.happiness)
-            : 1;
+          let affinity = 1;
+          // Only a food/toy drop is edible; the bait is a target the fish
+          // steers at but never consumes, so `found` stays null while lured or
+          // hooked and the contact/consume check below skips it.
+          let found = null;
+          if (isHooked) {
+            targetPoint = { x: fishing.baitX, y: fishing.baitY };
+            affinity = 1;
+          } else if (isLured) {
+            if (!biteStatesRef.current.has(c.id)) {
+              biteStatesRef.current.set(c.id, {
+                hiddenAttraction: generateHiddenAttraction(Math.random),
+                prevDist: dist,
+              });
+            }
+            targetPoint = { x: fishing.baitX, y: fishing.baitY };
+            // The bait outranks whatever drop this fish had claimed: a lure
+            // that loses to a shrimp already in the tank would never read as
+            // a race.
+            affinity = biteStatesRef.current.get(c.id).hiddenAttraction;
+          } else {
+            found = c.seekTargetId ? findDrop(claimed, c.seekTargetId) : null;
+            targetPoint = found ? { x: found.drop.x, y: found.drop.y } : null;
+            affinity = found
+              ? computeAffinity(found.type === 'food' ? c.hunger : c.happiness)
+              : 1;
+          }
           const stepped = stepMovement(
             moveStatesRef.current.get(c.id),
             dt,
@@ -214,7 +360,7 @@ export default function Aquarium() {
             affinity,
           );
           moveStatesRef.current.set(c.id, stepped);
-          if (targetPoint && Math.hypot(stepped.x - targetPoint.x, stepped.y - targetPoint.y)
+          if (found && Math.hypot(stepped.x - targetPoint.x, stepped.y - targetPoint.y)
             <= CONTACT_RADIUS) {
             events.push({
               creatureId: c.id,
@@ -224,8 +370,52 @@ export default function Aquarium() {
               y: stepped.y,
             });
           }
-          return { ...c, x: stepped.x, y: stepped.y };
+          // A fish diverted by the bait (lured or hooked) isn't pursuing its
+          // previously claimed drop — release that claim so assignSeekTargets
+          // can hand the drop to another hungry/bored fish instead of leaving
+          // it reserved-but-untouched for the whole cast.
+          return {
+            ...c,
+            x: stepped.x,
+            y: stepped.y,
+            seekTargetId: (isHooked || isLured) ? null : c.seekTargetId,
+          };
         });
+
+        // The bite race: every BITE_TICK_MS each in-range fish rolls for the
+        // hook, nearest first, and the first success ends the round —
+        // there's one line in the water, so only one fish can be hooked.
+        if (fishing.phase === 'casting' && now - fishing.lastBiteTick >= BITE_TICK_MS) {
+          fishing.lastBiteTick = now;
+          const eligible = positioned
+            .map((c) => ({ c, dist: Math.hypot(c.x - fishing.baitX, c.y - fishing.baitY) }))
+            .filter(({ dist }) => dist <= FISHING_DETECTION_RADIUS)
+            .sort((a, b) => a.dist - b.dist);
+          eligible.some(({ c, dist }) => {
+            // A fish that only just entered range this frame has no seeded
+            // state yet; treat this tick as its first, with no snowball.
+            const prior = biteStatesRef.current.get(c.id)
+              || { hiddenAttraction: generateHiddenAttraction(Math.random), prevDist: dist };
+            const gotCloser = dist < prior.prevDist;
+            const chance = computeBiteChance(
+              dist,
+              FISHING_DETECTION_RADIUS,
+              prior.hiddenAttraction,
+              gotCloser,
+            );
+            biteStatesRef.current.set(c.id, {
+              hiddenAttraction: prior.hiddenAttraction,
+              prevDist: dist,
+            });
+            if (Math.random() < chance) {
+              fishing.phase = 'hooked';
+              fishing.hookedId = c.id;
+              return true;
+            }
+            return false;
+          });
+        }
+
         let next = { ...claimed, creatures: positioned };
         events.forEach((ev) => {
           const before = next.unlockedDecorationTypes.length;
@@ -282,12 +472,62 @@ export default function Aquarium() {
     commit((prev) => wipeDirtSpot(prev, id), unlocked ? 'unlock' : 'sparkle');
   };
 
+  const handleFishingPointerDown = (e) => {
+    if (fishingRef.current.phase !== 'idle') return;
+    const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+    if (y > SURFACE_LINE_FRAC) return;
+    if (typeof tankRef.current.setPointerCapture === 'function') {
+      tankRef.current.setPointerCapture(e.pointerId);
+    }
+    fishingRef.current = {
+      ...fishingRef.current,
+      phase: 'pending',
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      baitX: x,
+      baitY: y,
+      rodTipX: x,
+      rodTipY: SURFACE_LINE_FRAC,
+      hookedId: null,
+      lastBiteTick: Date.now(),
+    };
+    bumpFishingRender((n) => n + 1);
+  };
+
+  const handleFishingPointerMove = (e) => {
+    const fishing = fishingRef.current;
+    if (fishing.pointerId !== e.pointerId || fishing.phase === 'idle') return;
+    if (fishing.phase === 'pending') {
+      if (e.clientY - fishing.startY < MIN_DRAG_PX) return;
+      fishing.phase = 'casting';
+    }
+    const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+    fishing.baitX = x;
+    fishing.baitY = y;
+    // Reeling the bait back up through the surface band lands whatever is on
+    // the hook. Only 'hooked' lands: an empty line crossing back up is just a
+    // recast, and releasing instead (handleFishingPointerUp, which resets
+    // unconditionally) frees the fish at any phase.
+    if (fishing.phase === 'hooked' && y <= SURFACE_LINE_FRAC) {
+      landCatch(fishing.hookedId);
+      return;
+    }
+    bumpFishingRender((n) => n + 1);
+  };
+
+  const handleFishingPointerUp = (e) => {
+    if (fishingRef.current.pointerId !== e.pointerId) return;
+    resetFishing();
+  };
+
   // Any tap inside the tank drops the selected tool's item at that point —
   // including a tap that lands on a fish, per the "guaranteed feed this one"
   // interaction. Dirt spots stop this from bubbling up (see their own
   // onClick) so tapping a spot always wipes it instead of dropping.
   const handleTankClick = (e) => {
     if (!tank) return;
+    if (tank.selectedTool === FISHING_TOOL_KEY) return;
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
       return;
@@ -309,6 +549,10 @@ export default function Aquarium() {
   // as a drag — matching handleTankClick, which already accepts taps anywhere.
   const handleTankPointerDown = (e) => {
     if (!tank) return;
+    if (tank.selectedTool === FISHING_TOOL_KEY) {
+      handleFishingPointerDown(e);
+      return;
+    }
     // dragRef tracks a single gesture, not one per pointerId — ignore a
     // second concurrent pointer (e.g. a resting palm, or multi-touch) rather
     // than letting it hijack the first pointer's in-progress drag/grab.
@@ -372,6 +616,10 @@ export default function Aquarium() {
   const isActiveGesturePointer = (e) => dragRef.current.active && e.pointerId === dragRef.current.pointerId;
 
   const handleTankPointerMove = (e) => {
+    if (tank && tank.selectedTool === FISHING_TOOL_KEY) {
+      handleFishingPointerMove(e);
+      return;
+    }
     if (!tank || !isActiveGesturePointer(e)) return;
     const drag = dragRef.current;
     if (!drag.dragging) {
@@ -415,9 +663,16 @@ export default function Aquarium() {
   const handleTankPointerUp = (e) => {
     // A previously-ignored second pointer releasing: suppress its own
     // trailing click right here, at the moment it's actually about to fire,
-    // instead of for its whole dwell time (see handleTankPointerDown).
+    // instead of for its whole dwell time (see handleTankPointerDown). Checked
+    // before the fishing branch below so this suppression always applies,
+    // regardless of which tool ends up selected by the time the pointer
+    // actually releases.
     if (ignoredPointersRef.current.delete(e.pointerId)) {
       suppressClickRef.current = true;
+      return;
+    }
+    if (tank && tank.selectedTool === FISHING_TOOL_KEY) {
+      handleFishingPointerUp(e);
       return;
     }
     if (!isActiveGesturePointer(e)) return;
@@ -441,14 +696,34 @@ export default function Aquarium() {
   // anything (KTD3's no-punishment, no-surprise-loss design).
   const handleTankPointerCancel = (e) => {
     // No trailing click follows a cancel, so an ignored pointer cancelling
-    // just needs its tracked entry cleared, not a suppression.
+    // just needs its tracked entry cleared, not a suppression — checked
+    // before the fishing branch so this cleanup always runs regardless of
+    // whatever tool is selected by the time the cancel arrives.
     ignoredPointersRef.current.delete(e.pointerId);
+    if (tank && tank.selectedTool === FISHING_TOOL_KEY) {
+      handleFishingPointerUp(e);
+      return;
+    }
     if (!isActiveGesturePointer(e)) return;
     dragRef.current = { active: false, lastSample: 0 };
   };
 
   const handleTankPointerLeave = (e) => {
     ignoredPointersRef.current.delete(e.pointerId);
+    if (tank && tank.selectedTool === FISHING_TOOL_KEY) {
+      // Pointer capture (set in handleFishingPointerDown) keeps move/up
+      // targeting the tank even after the pointer physically leaves its
+      // bounds, so a leave here isn't a real end-of-gesture signal and must
+      // not abort an in-progress cast or free a hooked fish. Only fall
+      // through to reset when capture isn't supported (the same jsdom/
+      // legacy-browser gap handleTankPointerDown already feature-detects) —
+      // there, move events may not survive the boundary either, so ending
+      // the gesture here matches what up/cancel would otherwise never get
+      // the chance to do.
+      if (typeof tankRef.current.setPointerCapture === 'function') return;
+      handleFishingPointerUp(e);
+      return;
+    }
     if (!isActiveGesturePointer(e)) return;
     // A decoration grab stays active through pointer capture (see
     // handleTankPointerDown) — only a plain paint-drag ends on leave.
@@ -459,6 +734,95 @@ export default function Aquarium() {
   const handleHatch = (e) => {
     e.stopPropagation();
     commit((prev) => hatchEgg(prev, Date.now()), 'pop');
+  };
+
+  const handleBucketPointerDown = (e, creatureId) => {
+    if (typeof e.target.setPointerCapture === 'function') {
+      e.target.setPointerCapture(e.pointerId);
+    }
+    // A second concurrent bucket-tray drag replaces the tracked gesture below
+    // (single-slot by design — see bucketDragRef's declaration). Without also
+    // clearing any pending discard timer here, the first gesture's timer
+    // would still fire later against the fish id it captured, permanently
+    // deleting it even though nothing is being held over the trash anymore.
+    clearTimeout(trashTimerRef.current);
+    trashTimerRef.current = null;
+    setHoldingTrashId(null);
+    bucketDragRef.current = { active: true, creatureId, pointerId: e.pointerId };
+  };
+
+  const handleBucketPointerMove = (e) => {
+    const drag = bucketDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+    const overTrash = trashRef.current && isPointInRect(trashRef.current, e.clientX, e.clientY);
+    // The pending-timer REF, not holdingTrashId, is what gates starting a
+    // hold: React treats pointermove as continuous-priority and may not have
+    // committed the setHoldingTrashId from the previous move before the next
+    // one arrives, so a state-based guard lets two moves each start their own
+    // timer — the second overwrites trashTimerRef and the first becomes an
+    // orphan that no clearTimeout can reach, deleting the fish 500ms later
+    // even after the user pulled away or released. holdingTrashId is now
+    // purely the shake-animation class driver.
+    if (overTrash && trashTimerRef.current == null) {
+      setHoldingTrashId(drag.creatureId);
+      trashTimerRef.current = setTimeout(() => {
+        // Cleared first so the ref never names a timer that has already
+        // fired — otherwise the next hold would be gated out by a stale id.
+        trashTimerRef.current = null;
+        // This fires from a bare timer, outside any React-recognized event or
+        // act() wrapper (a real pointer-hold has no such wrapper either), so
+        // React's concurrent scheduler would otherwise defer the resulting
+        // setTank — and its saveTank side effect — past this callback. flushSync
+        // forces the delete (and its persistence) to complete before the timer
+        // callback returns, matching what a real held-finger discard needs:
+        // the fish is actually gone the instant the hold completes.
+        flushSync(() => {
+          commit((prev) => deleteFromBucket(prev, drag.creatureId), 'sparkle');
+        });
+        // Permanently gone — unlike a returned fish, a discarded one never
+        // re-enters the tank, so its stale movement state would otherwise
+        // sit in the Map for the rest of the page's lifetime.
+        moveStatesRef.current.delete(drag.creatureId);
+        setHoldingTrashId(null);
+        bucketDragRef.current = { active: false, creatureId: null, pointerId: null };
+      }, DISCARD_HOLD_MS);
+    } else if (!overTrash && trashTimerRef.current != null) {
+      clearTimeout(trashTimerRef.current);
+      trashTimerRef.current = null;
+      setHoldingTrashId(null);
+    }
+  };
+
+  const handleBucketPointerUp = (e) => {
+    const drag = bucketDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+    clearTimeout(trashTimerRef.current);
+    trashTimerRef.current = null;
+    setHoldingTrashId(null);
+    const overTank = tankRef.current && isPointInRect(tankRef.current, e.clientX, e.clientY);
+    if (overTank) {
+      // returnFish silently no-ops when the tank is already at TANK_CAP
+      // (bucketing a fish can free a slot an egg then fills) — check the same
+      // condition here so a refused return gets the cap-reached cue instead
+      // of the success one, matching dropAt's own cap-refused feedback.
+      if (tank.creatures.length >= TANK_CAP) {
+        const { x, y } = rectFraction(tankRef.current, e.clientX, e.clientY);
+        spawnEffect(x, y, '🚫');
+        if (soundRef.current) soundRef.current.play('refused');
+      } else {
+        commit((prev) => returnFish(prev, drag.creatureId), 'pop');
+      }
+    }
+    bucketDragRef.current = { active: false, creatureId: null, pointerId: null };
+  };
+
+  const handleBucketPointerCancel = (e) => {
+    const drag = bucketDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+    clearTimeout(trashTimerRef.current);
+    trashTimerRef.current = null;
+    setHoldingTrashId(null);
+    bucketDragRef.current = { active: false, creatureId: null, pointerId: null };
   };
 
   const toggleSound = () =>
@@ -507,6 +871,42 @@ export default function Aquarium() {
         onPointerCancel={handleTankPointerCancel}
         role="presentation"
       >
+        {tank.selectedTool === FISHING_TOOL_KEY && (
+          <div
+            className={styles.surfaceLine}
+            style={{ top: `${SURFACE_LINE_FRAC * 100}%` }}
+            aria-hidden="true"
+          />
+        )}
+        {/* Deliberately 'casting' || 'hooked', not !== 'idle' — the bait must
+            stay hidden during 'pending', the brief window between
+            pointer-down in the surface band and the drag actually crossing
+            MIN_DRAG_PX downward. Showing it on pointer-down alone would make
+            a tap-and-release inside the band flash a bait sprite even though
+            no cast happened. */}
+        {(fishingRef.current.phase === 'casting' || fishingRef.current.phase === 'hooked') && (
+          <>
+            <svg className={styles.line} data-testid="line" aria-hidden="true">
+              <line
+                x1={`${fishingRef.current.rodTipX * 100}%`}
+                y1={`${fishingRef.current.rodTipY * 100}%`}
+                x2={`${fishingRef.current.baitX * 100}%`}
+                y2={`${fishingRef.current.baitY * 100}%`}
+              />
+            </svg>
+            <span
+              data-testid="bait"
+              className={styles.bait}
+              style={{
+                left: `${fishingRef.current.baitX * 100}%`,
+                top: `${fishingRef.current.baitY * 100}%`,
+              }}
+              aria-hidden="true"
+            >
+              🪱
+            </span>
+          </>
+        )}
         {tank.creatures.map((c) => {
           const species = getSpecies(c.species);
           const size = species.sizePx[c.stage];
@@ -628,6 +1028,32 @@ export default function Aquarium() {
         )}
       </div>
 
+      {tank.bucket.length > 0 && (
+        <div className={styles.bucketTray} data-testid="bucketTray" role="group" aria-label="Bucket">
+          {tank.bucket.map((c) => {
+            const species = getSpecies(c.species);
+            return (
+              <button
+                type="button"
+                key={c.id}
+                data-testid="bucketFish"
+                className={`${styles.bucketFish} ${holdingTrashId === c.id ? styles.trashHolding : ''}`}
+                aria-label={`${species.name} in bucket`}
+                onPointerDown={(e) => handleBucketPointerDown(e, c.id)}
+                onPointerMove={handleBucketPointerMove}
+                onPointerUp={handleBucketPointerUp}
+                onPointerCancel={handleBucketPointerCancel}
+              >
+                <span aria-hidden="true">{species.emoji[c.stage]}</span>
+              </button>
+            );
+          })}
+          <div className={styles.trash} data-testid="trash" ref={trashRef} aria-label="Trash" role="img">
+            🗑️
+          </div>
+        </div>
+      )}
+
       <div className={styles.palette} role="group" aria-label="Care tools">
         {TOOLS.map((tool) => (
           <button
@@ -641,6 +1067,15 @@ export default function Aquarium() {
             <span aria-hidden="true">{tool.emoji}</span>
           </button>
         ))}
+        <button
+          type="button"
+          className={`${styles.tool} ${tank.selectedTool === FISHING_TOOL_KEY ? styles.selected : ''}`}
+          aria-pressed={tank.selectedTool === FISHING_TOOL_KEY}
+          aria-label="Fishing"
+          onClick={() => selectTool(FISHING_TOOL_KEY)}
+        >
+          <span aria-hidden="true">🎣</span>
+        </button>
         <div
           className={styles.decorationPalette}
           data-testid="decorationPalette"
