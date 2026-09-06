@@ -20,6 +20,13 @@ import {
   PET_TAP_AMOUNT,
 } from '../../lib/tamagotchi/simulation';
 import { createSound } from '../../lib/tamagotchi/sound';
+import {
+  generateRounds,
+  scoreTap,
+  computePlayAmount,
+  ROUND_COUNT,
+  HIT_WINDOW_MS,
+} from '../../lib/tamagotchi/minigame';
 
 const TICK_MS = 2000;
 
@@ -39,6 +46,70 @@ function NeedBar({ label, value }) {
 NeedBar.propTypes = {
   label: PropTypes.string.isRequired,
   value: PropTypes.number.isRequired,
+};
+
+function MinigameOverlay({ onComplete, onCancel }) {
+  const [rounds] = useState(() => generateRounds(ROUND_COUNT));
+  const [roundIndex, setRoundIndex] = useState(0);
+  const resultsRef = useRef([]);
+  const startRef = useRef(Date.now());
+  const firedRef = useRef(false);
+
+  useEffect(() => {
+    if (roundIndex >= ROUND_COUNT) {
+      if (!firedRef.current) {
+        firedRef.current = true;
+        onComplete(resultsRef.current);
+      }
+      return undefined;
+    }
+    const round = rounds[roundIndex];
+    const msUntilWindowCloses = round.targetAt + HIT_WINDOW_MS - (Date.now() - startRef.current);
+    if (msUntilWindowCloses <= 0) {
+      // The window already closed before this effect got to run (e.g. a
+      // background tab, or a fake-timer test jumping far ahead in one leap).
+      // Resolve it as a miss immediately rather than scheduling a 0ms timer
+      // — a real timer here would need another macrotask/tick to fire,
+      // which a single big time-jump in tests never provides, stalling the
+      // overlay short of ROUND_COUNT results.
+      resultsRef.current = [...resultsRef.current, { hit: false, accuracy: 0 }];
+      setRoundIndex((i) => i + 1);
+      return undefined;
+    }
+    const id = setTimeout(() => {
+      resultsRef.current = [...resultsRef.current, { hit: false, accuracy: 0 }];
+      setRoundIndex((i) => i + 1);
+    }, msUntilWindowCloses);
+    return () => clearTimeout(id);
+  }, [roundIndex, rounds, onComplete]);
+
+  const handleTap = () => {
+    if (roundIndex >= ROUND_COUNT) return;
+    const tapOffsetMs = Date.now() - startRef.current;
+    resultsRef.current = [...resultsRef.current, scoreTap(rounds[roundIndex], tapOffsetMs)];
+    setRoundIndex((i) => i + 1);
+  };
+
+  return (
+    <div
+      className={styles.minigameOverlay}
+      data-testid="minigame-overlay"
+      role="dialog"
+      aria-label="Play minigame"
+    >
+      <button type="button" className={styles.minigameClose} aria-label="Cancel" onClick={onCancel}>
+        ✕
+      </button>
+      <button type="button" className={styles.minigameTap} aria-label="Tap" onClick={handleTap}>
+        🎯
+      </button>
+      <p>{`Round ${Math.min(roundIndex + 1, ROUND_COUNT)} of ${ROUND_COUNT}`}</p>
+    </div>
+  );
+}
+MinigameOverlay.propTypes = {
+  onComplete: PropTypes.func.isRequired,
+  onCancel: PropTypes.func.isRequired,
 };
 
 export default function Tamagotchi() {
@@ -79,6 +150,17 @@ export default function Tamagotchi() {
       return savePet(next, Date.now());
     });
   }, []);
+
+  const [minigameActive, setMinigameActive] = useState(false);
+  const handleOpenMinigame = () => setMinigameActive(true);
+  const handleMinigameComplete = useCallback(
+    (results) => {
+      setMinigameActive(false);
+      commit((prev) => playWithPet(prev, computePlayAmount(results)), 'play');
+    },
+    [commit],
+  );
+  const handleMinigameCancel = useCallback(() => setMinigameActive(false), []);
 
   const handleFeed = () => commit((prev) => feedPet(prev), 'nom');
   const handlePlay = () => commit((prev) => playWithPet(prev, PET_TAP_AMOUNT), 'play');
@@ -142,6 +224,10 @@ export default function Tamagotchi() {
         )}
       </div>
 
+      {minigameActive && (
+        <MinigameOverlay onComplete={handleMinigameComplete} onCancel={handleMinigameCancel} />
+      )}
+
       <div className={styles.needs}>
         <NeedBar label="Hunger" value={pet.hunger} />
         <NeedBar label="Happiness" value={pet.happiness} />
@@ -152,7 +238,7 @@ export default function Tamagotchi() {
         <button type="button" className={styles.action} aria-label="Feed" onClick={handleFeed}>
           🍤
         </button>
-        <button type="button" className={styles.action} aria-label="Play" onClick={handlePlay}>
+        <button type="button" className={styles.action} aria-label="Play" onClick={handleOpenMinigame}>
           🎾
         </button>
         <button
