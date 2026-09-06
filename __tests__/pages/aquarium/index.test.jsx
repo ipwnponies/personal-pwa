@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import Aquarium from '../../../pages/aquarium/index';
 import { createSound } from '../../../lib/aquarium/sound';
 
@@ -47,6 +47,7 @@ const baseTank = (overrides = {}) => ({
   decorations: [],
   decorationProgress: 0,
   unlockedDecorationTypes: ['seaweed', 'coral'],
+  bucket: [],
   ...overrides,
 });
 
@@ -577,6 +578,181 @@ describe('Aquarium page fishing gesture', () => {
     randomSpy.mockRestore();
     const after = Number(screen.getByTestId('creature').style.left.replace('%', ''));
     expect(after).toBeGreaterThan(before);
+  });
+
+  // Like the steering test above, this one runs on real rAF frames and real
+  // wall-clock waits. Forcing a bite needs TWO different rng regimes, not one
+  // constant: hiddenAttraction and the bite roll draw from the same rng, and
+  // computeBiteChance scales the chance BY hiddenAttraction — so a constant
+  // stub compares a value against a chance proportional to that same value
+  // (0.15 * proximity * r * snowball < r for every r), which can never hit.
+  // A call-count stub would be just as wrong here: the loop's first three
+  // draws belong to createMovementState (heading, cruiseSpeed, wobblePhase),
+  // so hiddenAttraction is the FOURTH call, not the first — and that index
+  // shifts with how many frames land before the cast, plus React's own
+  // scheduler draws from Math.random too. Flipping the regime from test code
+  // instead is index-independent: 0.99 while the lured fish seeds its
+  // hiddenAttraction, then 0 from before the first BITE_TICK_MS roll onward,
+  // so every roll beats any non-zero chance.
+  it('a hooked fish that crosses back above the surface line is caught into the bucket', async () => {
+    let forceBite = false;
+    const randomSpy = vi.spyOn(Math, 'random').mockImplementation(() => (forceBite ? 0 : 0.99));
+    seedTank({
+      selectedTool: 'fishing',
+      creatures: [{
+        id: 'c1',
+        species: 'clownfish',
+        bornAt: 0,
+        stage: 'baby',
+        hunger: 100,
+        happiness: 100,
+        wellMetSince: null,
+        seekTargetId: null,
+        x: 0.15,
+        y: 0.15,
+      }],
+    });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    // Bait at tank-fraction (0.15, 0.2): the fish's own column, 0.05 below it
+    // and so well inside FISHING_DETECTION_RADIUS (0.35) for the whole cast.
+    fireEvent.pointerDown(tank, { clientX: 60, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 60, clientY: 60, pointerId: 1 });
+    // Gate the regime flip on a frame having actually run, rather than on a
+    // guessed delay: the fish only picks up a rendered position once the loop
+    // has built its movement state, which is the same frame that seeds the
+    // lured fish's hiddenAttraction.
+    const creatureLeft = () => screen.getByTestId('creature').style.left;
+    const beforeFrames = creatureLeft();
+    await waitFor(() => {
+      expect(creatureLeft()).not.toBe(beforeFrames);
+    });
+    forceBite = true;
+    // The bite tick runs every frame inside the movement loop, not only on
+    // pointer moves — this window is longer than one BITE_TICK_MS (400ms), so
+    // the loop rolls (and, at 0, hooks) before the reel-in below.
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 700);
+      });
+    });
+    // Drag the bait back up above the surface band to land the catch.
+    fireEvent.pointerMove(tank, { clientX: 60, clientY: 5, pointerId: 1 });
+    randomSpy.mockRestore();
+    const result = readTank();
+    expect(result.bucket).toHaveLength(1);
+    expect(result.bucket[0].id).toBe('c1');
+    expect(result.creatures).toHaveLength(0);
+  });
+
+  // Same forced-bite setup as the catch test above (identical rng regime flip,
+  // identical seeded fish and bait coordinates) so a fish is genuinely ON the
+  // hook — the release, not an empty line, is what this asserts. Seeding no
+  // creature here would make the empty-bucket assertion pass trivially.
+  it('releasing before crossing the surface line leaves the fish uncaught', async () => {
+    let forceBite = false;
+    const randomSpy = vi.spyOn(Math, 'random').mockImplementation(() => (forceBite ? 0 : 0.99));
+    seedTank({
+      selectedTool: 'fishing',
+      creatures: [{
+        id: 'c1',
+        species: 'clownfish',
+        bornAt: 0,
+        stage: 'baby',
+        hunger: 100,
+        happiness: 100,
+        wellMetSince: null,
+        seekTargetId: null,
+        x: 0.15,
+        y: 0.15,
+      }],
+    });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    fireEvent.pointerDown(tank, { clientX: 60, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 60, clientY: 60, pointerId: 1 });
+    const creatureLeft = () => screen.getByTestId('creature').style.left;
+    const beforeFrames = creatureLeft();
+    await waitFor(() => {
+      expect(creatureLeft()).not.toBe(beforeFrames);
+    });
+    forceBite = true;
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 700);
+      });
+    });
+    // Let go while still below the surface band instead of reeling in: the
+    // hooked fish gets away and stays in the tank.
+    fireEvent.pointerUp(tank, { clientX: 60, clientY: 60, pointerId: 1 });
+    randomSpy.mockRestore();
+    // Live state: the fish is still rendered in the tank and no bucket tray
+    // appeared. Storage is checked too, since landing a catch would have
+    // committed (and so persisted) a non-empty bucket.
+    expect(screen.getAllByTestId('creature')).toHaveLength(1);
+    expect(screen.queryByTestId('bucketTray')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('bait')).not.toBeInTheDocument();
+    const result = readTank();
+    expect(result.bucket).toEqual([]);
+    expect(result.creatures.some((c) => c.id === 'c1')).toBe(true);
+  });
+
+  it('switching away from Fishing mid-cast clears the bait and lets fishing restart cleanly', () => {
+    seedTank({ selectedTool: 'fishing' });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    fireEvent.pointerDown(tank, { clientX: 200, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 200, clientY: 100, pointerId: 1 });
+    expect(screen.getByTestId('bait')).toBeInTheDocument();
+    // Switch tools without ever releasing pointer 1 — simulates the pointer
+    // capture being lost to whatever triggered the tool change.
+    fireEvent.click(screen.getByRole('button', { name: /food/i }));
+    expect(screen.queryByTestId('bait')).not.toBeInTheDocument();
+    // Re-selecting Fishing and casting again must work — if resetFishing
+    // never ran, fishingRef would still be stuck mid-cast and
+    // handleFishingPointerDown's phase !== 'idle' guard would silently
+    // reject every new cast attempt.
+    fireEvent.click(screen.getByRole('button', { name: /fishing/i }));
+    fireEvent.pointerDown(tank, { clientX: 200, clientY: 10, pointerId: 2 });
+    fireEvent.pointerMove(tank, { clientX: 200, clientY: 100, pointerId: 2 });
+    expect(screen.getByTestId('bait')).toBeInTheDocument();
+  });
+
+  it('leaving the tank bounds does not abort a cast when pointer capture is supported', () => {
+    seedTank({ selectedTool: 'fishing' });
+    Element.prototype.setPointerCapture = vi.fn();
+    try {
+      render(<Aquarium />);
+      const tank = screen.getByRole('presentation');
+      fireEvent.pointerDown(tank, { clientX: 200, clientY: 10, pointerId: 1 });
+      fireEvent.pointerMove(tank, { clientX: 200, clientY: 100, pointerId: 1 });
+      expect(screen.getByTestId('bait')).toBeInTheDocument();
+      // A captured pointer keeps targeting the tank in real browsers even
+      // after physically leaving its bounds — this leave is not a real
+      // release and must not abort the cast.
+      fireEvent.pointerLeave(tank, { clientX: 500, clientY: 100, pointerId: 1 });
+      expect(screen.getByTestId('bait')).toBeInTheDocument();
+    } finally {
+      delete Element.prototype.setPointerCapture;
+    }
+  });
+
+  it('switching tools mid-cast does not let the stranded casting pointer drop an item on release', () => {
+    seedTank({ selectedTool: 'fishing' });
+    render(<Aquarium />);
+    const tank = screen.getByRole('presentation');
+    fireEvent.pointerDown(tank, { clientX: 200, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(tank, { clientX: 200, clientY: 100, pointerId: 1 });
+    expect(screen.getByTestId('bait')).toBeInTheDocument();
+    // A second finger switches tools mid-cast without pointer 1 ever
+    // releasing — simulates the pointer capture being lost to whatever
+    // triggered the tool change.
+    fireEvent.click(screen.getByRole('button', { name: /food/i }));
+    // Pointer 1 now lifts inside the tank under the new tool; its trailing
+    // click must not fall through to a plain tap-to-drop.
+    fireEvent.pointerUp(tank, { clientX: 200, clientY: 100, pointerId: 1 });
+    fireEvent.click(tank, { clientX: 200, clientY: 100 });
+    expect(screen.queryAllByTestId('foodDrop')).toHaveLength(0);
   });
 
   it('a fish lured away by the bait releases its claimed drop so another fish can take it', async () => {
