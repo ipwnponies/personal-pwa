@@ -5,7 +5,7 @@ import PropTypes from 'prop-types';
 
 import styles from './index.module.css';
 import { pwaMetaTags } from '../../components/layout';
-import { getPetType, spriteMood } from '../../lib/tamagotchi/creatures';
+import { getPetType, spriteMood, getSprite } from '../../lib/tamagotchi/creatures';
 import { loadPet, savePet } from '../../lib/tamagotchi/storage';
 import {
   applyElapsed,
@@ -142,6 +142,19 @@ export default function Tamagotchi() {
     // to start once the pet first loads.
   }, [pet !== null]);
 
+  const prevStageRef = useRef(null);
+
+  // Plays the existing 'evolve' cue the moment the pet reaches adulthood.
+  // Guards on pet being loaded since this hook runs before the early
+  // return below, on every render including the first (pet === null).
+  useEffect(() => {
+    if (!pet) return;
+    if (prevStageRef.current && prevStageRef.current !== 'adult' && pet.stage === 'adult') {
+      if (soundRef.current) soundRef.current.play('evolve');
+    }
+    prevStageRef.current = pet.stage;
+  }, [pet]);
+
   const commit = useCallback((updater, cue) => {
     setPet((prev) => {
       if (!prev) return prev;
@@ -184,7 +197,7 @@ export default function Tamagotchi() {
 
   const petType = getPetType(pet.petType);
   const mood = spriteMood(pet, MET_THRESHOLD);
-  const sprite = petType.sprite[pet.stage][mood];
+  const sprite = getSprite(petType, pet.stage, pet.adultForm, mood);
 
   return (
     <div className={styles.page}>
