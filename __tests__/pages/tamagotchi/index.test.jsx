@@ -105,4 +105,20 @@ describe('Tamagotchi page', () => {
     expect(screen.getByRole('button', { name: 'Sound on' })).toBeInTheDocument();
     expect(readPet().soundOn).toBe(true);
   });
+
+  it('giving medicine clears sick and hides the medicine button, playing a cue', () => {
+    seedPet({ sick: true });
+    render(<Tamagotchi />);
+    const medicineButton = screen.getByRole('button', { name: 'Medicine' });
+    fireEvent.click(medicineButton);
+    expect(readPet().sick).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Medicine' })).not.toBeInTheDocument();
+    expect(latestPlaySpy()).toHaveBeenCalledWith('medicine');
+  });
+
+  it('hides the medicine button while poop is still uncleaned', () => {
+    seedPet({ sick: true, hasPoop: true });
+    render(<Tamagotchi />);
+    expect(screen.queryByRole('button', { name: 'Medicine' })).toBeNull();
+  });
 });

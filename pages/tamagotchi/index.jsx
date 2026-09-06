@@ -13,6 +13,7 @@ import {
   playWithPet,
   toggleSleep,
   cleanPoop,
+  giveMedicine,
   MET_THRESHOLD,
   NEED_FLOOR,
   NEED_MAX,
@@ -83,6 +84,7 @@ export default function Tamagotchi() {
   const handlePlay = () => commit((prev) => playWithPet(prev, PET_TAP_AMOUNT), 'play');
   const handleClean = () => commit((prev) => cleanPoop(prev), 'clean');
   const handleSleepToggle = () => commit((prev) => toggleSleep(prev), 'sleep');
+  const handleMedicine = () => commit((prev) => giveMedicine(prev), 'medicine');
   const toggleSound = () =>
     commit((prev) => {
       const soundOn = !prev.soundOn;
@@ -162,6 +164,15 @@ export default function Tamagotchi() {
         >
           {pet.asleep ? '⏰' : '🌙'}
         </button>
+        {/* Poop still present would re-sicken the pet on the very next tick
+            (applyElapsed recomputes sick from poopUncleanMinutes), so the
+            medicine button only appears once the mess is cleaned — making
+            the clean-then-medicate ordering self-evident. */}
+        {pet.sick && !pet.hasPoop && (
+          <button type="button" className={styles.action} aria-label="Medicine" onClick={handleMedicine}>
+            💊
+          </button>
+        )}
       </div>
     </div>
   );
