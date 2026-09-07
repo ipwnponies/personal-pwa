@@ -375,8 +375,108 @@ describe('WeightedChoices grouped structure', () => {
       fireEvent.click(pickButton);
 
       await waitFor(() => {
-        const resultText = screen.getByText(/First|Second/);
-        expect(resultText).toBeInTheDocument();
+        const resultText = screen.getAllByText(/First|Second/);
+        expect(resultText.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('records a history entry on PICK, persisted under its own storage key', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      const choicesTab = screen.getByText('Choices');
+      fireEvent.click(choicesTab);
+
+      const pickButton = screen.getByRole('button', { name: /PICK/i });
+      fireEvent.click(pickButton);
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices-history'));
+        expect(saved.g1).toHaveLength(1);
+        expect(saved.g1[0]).toHaveProperty('label');
+        expect(saved.g1[0]).toHaveProperty('timestamp');
+        expect(['First', 'Second']).toContain(saved.g1[0].label);
+      });
+
+      // Recent-history list shows the same label
+      expect(screen.getAllByText(/First|Second/).length).toBeGreaterThan(0);
+    });
+
+    it('shows only the expanded group history when switching groups', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Group A',
+          choices: [
+            { id: 'c1', label: 'Choice A1', weight: 1 },
+            { id: 'c2', label: 'Choice A2', weight: 1 },
+          ],
+        },
+        {
+          id: 'g2',
+          name: 'Group B',
+          choices: [
+            { id: 'c3', label: 'Choice B1', weight: 1 },
+            { id: 'c4', label: 'Choice B2', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      localStorage.setItem(
+        'random-choices-history',
+        JSON.stringify({
+          g1: [{ id: 'h1', label: 'Choice A1', timestamp: 1 }],
+          g2: [{ id: 'h2', label: 'Choice B1', timestamp: 2 }],
+        }),
+      );
+
+      render(<Random />);
+      const choicesTab = screen.getByText('Choices');
+      fireEvent.click(choicesTab);
+
+      expect(screen.getByText('Choice A1')).toBeInTheDocument();
+      expect(screen.queryByText('Choice B1')).not.toBeInTheDocument();
+
+      const expandButtons = screen.getAllByLabelText(/Expand group|Expanded/);
+      fireEvent.click(expandButtons[1]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Choice B1')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Choice A1')).not.toBeInTheDocument();
+    });
+
+    it('removes a deleted group history', async () => {
+      const groupsData = [
+        { id: 'g1', name: 'First Group', choices: [{ id: 'c1', label: 'Choice 1', weight: 1 }] },
+        { id: 'g2', name: 'Second Group', choices: [] },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      localStorage.setItem(
+        'random-choices-history',
+        JSON.stringify({ g1: [{ id: 'h1', label: 'Choice 1', timestamp: 1 }] }),
+      );
+
+      render(<Random />);
+      const choicesTab = screen.getByText('Choices');
+      fireEvent.click(choicesTab);
+
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[0]);
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices-history'));
+        expect(saved.g1).toBeUndefined();
       });
     });
 
@@ -410,7 +510,7 @@ describe('WeightedChoices grouped structure', () => {
       fireEvent.click(pickButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/Choice A[12]/)).toBeInTheDocument();
+        expect(screen.getAllByText(/Choice A[12]/).length).toBeGreaterThan(0);
       });
 
       // Get all expand buttons and click the second one to switch to Group B

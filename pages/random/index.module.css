@@ -426,6 +426,46 @@
   pointer-events: none;
 }
 
+/* Pick history */
+.historyList {
+  margin-top: 32px;
+  max-height: 240px;
+  overflow-y: auto;
+  border-radius: 12px;
+  background: #2a2a3d;
+}
+
+.historyTitle {
+  display: block;
+  padding: 12px 16px 4px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #999;
+}
+
+.historyRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  border-top: 1px solid #1a1a2e;
+}
+
+.historyRow:first-of-type {
+  border-top: none;
+}
+
+.historyLabel {
+  color: #e0e0e0;
+  font-size: 0.9rem;
+}
+
+.historyTime {
+  color: #666;
+  font-size: 0.75rem;
+}
+
 /* Tablet portrait and up (iPad and similar) */
 @media (min-width: 768px) {
   .tabs {
