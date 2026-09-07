@@ -332,10 +332,27 @@ function WeightedChoices() {
   });
 
   const [result, setResult] = useState(null);
+  const [undoToast, setUndoToast] = useState(null);
+  const undoTimerRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem('random-choices', JSON.stringify(groups));
   }, [groups]);
+
+  useEffect(() => () => clearTimeout(undoTimerRef.current), []);
+
+  const showUndoToast = useCallback((message, onUndo) => {
+    clearTimeout(undoTimerRef.current);
+    setUndoToast({ message, onUndo });
+    undoTimerRef.current = setTimeout(() => setUndoToast(null), 5000);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (!undoToast) return;
+    clearTimeout(undoTimerRef.current);
+    undoToast.onUndo();
+    setUndoToast(null);
+  }, [undoToast]);
 
   const expandedGroup = groups.find((g) => g.id === expandedGroupId);
   const expandedChoices = expandedGroup?.choices || [];
@@ -393,8 +410,22 @@ function WeightedChoices() {
   );
 
   const handleDeleteChoice = useCallback(
-    (groupId, id) => updateGroupChoices(groupId, (choices) => choices.filter((c) => c.id !== id)),
-    [updateGroupChoices],
+    (groupId, id) => {
+      const group = groups.find((g) => g.id === groupId);
+      const index = group.choices.findIndex((c) => c.id === id);
+      const deletedChoice = group.choices[index];
+
+      updateGroupChoices(groupId, (choices) => choices.filter((c) => c.id !== id));
+
+      showUndoToast('Choice deleted', () => {
+        updateGroupChoices(groupId, (choices) => {
+          const next = [...choices];
+          next.splice(index, 0, deletedChoice);
+          return next;
+        });
+      });
+    },
+    [groups, updateGroupChoices, showUndoToast],
   );
 
   const handleRenameGroup = useCallback((groupId, newName) => {
@@ -403,6 +434,9 @@ function WeightedChoices() {
 
   const handleDeleteGroup = useCallback(
     (groupId) => {
+      const index = groups.findIndex((g) => g.id === groupId);
+      const deletedGroup = groups[index];
+      const wasExpanded = expandedGroupId === groupId;
       const remaining = groups.filter((g) => g.id !== groupId);
       const newGroup = remaining.length === 0 ? { id: generateId(), name: 'Default', choices: [] } : null;
 
@@ -414,13 +448,26 @@ function WeightedChoices() {
       if (newGroup) {
         setExpandedGroupId(newGroup.id);
         setResult(null);
-      } else if (expandedGroupId === groupId) {
+      } else if (wasExpanded) {
         // We deleted the expanded group, so switch to another and clear its result.
         setExpandedGroupId(remaining[0].id);
         setResult(null);
       }
+
+      showUndoToast('Group deleted', () => {
+        setGroups((prev) => {
+          const withoutReplacement = newGroup ? prev.filter((g) => g.id !== newGroup.id) : prev;
+          const next = [...withoutReplacement];
+          next.splice(index, 0, deletedGroup);
+          return next;
+        });
+        if (newGroup || wasExpanded) {
+          setExpandedGroupId(deletedGroup.id);
+          setResult(null);
+        }
+      });
     },
-    [groups, expandedGroupId],
+    [groups, expandedGroupId, showUndoToast],
   );
 
   const handleToggleGroup = (groupId) => {
@@ -507,6 +554,15 @@ function WeightedChoices() {
         <div className={styles.result}>
           <span className={styles.resultBadge}>{result.label}</span>
           <div className={styles.resultSum}>{result.percent}% chance</div>
+        </div>
+      )}
+
+      {undoToast && (
+        <div className={styles.undoToast} role="status">
+          <span>{undoToast.message}</span>
+          <button type="button" className={styles.undoButton} onClick={handleUndo}>
+            Undo
+          </button>
         </div>
       )}
     </div>

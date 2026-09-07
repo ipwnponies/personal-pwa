@@ -426,6 +426,41 @@
   pointer-events: none;
 }
 
+/* Undo toast */
+.undoToast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #2a2a3d;
+  border: 1px solid #3a3a5a;
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+}
+
+.undoButton {
+  background: none;
+  border: none;
+  color: #4fc3f7;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.undoButton:hover {
+  color: #81d4fa;
+}
+
 /* Tablet portrait and up (iPad and similar) */
 @media (min-width: 768px) {
   .tabs {
