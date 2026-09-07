@@ -5,12 +5,14 @@ import { TabList, Tabs, Tab, TabPanel } from 'react-tabs';
 
 import 'react-tabs/style/react-tabs.css';
 import styles from './index.module.css';
-import { weightedRandomChoice, generateId } from '../../lib/random';
+import { weightedRandomChoice, generateId, pushHistoryEntry } from '../../lib/random';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
 
 const HORIZONTAL_SWIPE_THRESHOLD = 50;
+const HISTORY_STORAGE_KEY = 'random-choices-history';
+const MAX_HISTORY_ENTRIES = 20;
 
 function useHorizontalSwipe(onSwipeLeft, onSwipeRight) {
   const touchRef = useRef(null);
@@ -333,14 +335,29 @@ function WeightedChoices() {
 
   const [result, setResult] = useState(null);
 
+  const [history, setHistory] = useState(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
   useEffect(() => {
     localStorage.setItem('random-choices', JSON.stringify(groups));
   }, [groups]);
+
+  useEffect(() => {
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+  }, [history]);
 
   const expandedGroup = groups.find((g) => g.id === expandedGroupId);
   const expandedChoices = expandedGroup?.choices || [];
   const totalWeight = expandedChoices.reduce((sum, c) => sum + c.weight, 0);
   const canPick = expandedChoices.filter((c) => c.label.trim()).length >= 2;
+  const expandedHistory = history[expandedGroupId] || [];
 
   const [ghostKeyChoice, setGhostKeyChoice] = useState(0);
   const [ghostKeyGroup, setGhostKeyGroup] = useState(0);
@@ -411,6 +428,11 @@ function WeightedChoices() {
         return filtered.length === 0 ? [newGroup] : filtered;
       });
 
+      setHistory((prev) => {
+        const { [groupId]: _removed, ...rest } = prev;
+        return rest;
+      });
+
       if (newGroup) {
         setExpandedGroupId(newGroup.id);
         setResult(null);
@@ -437,6 +459,14 @@ function WeightedChoices() {
       label: chosen.label,
       percent: Math.round((chosen.weight / validTotal) * 100),
     });
+    setHistory((prev) => ({
+      ...prev,
+      [expandedGroupId]: pushHistoryEntry(
+        prev[expandedGroupId] || [],
+        { id: generateId(), label: chosen.label, timestamp: Date.now() },
+        MAX_HISTORY_ENTRIES,
+      ),
+    }));
   };
 
   return (
@@ -507,6 +537,23 @@ function WeightedChoices() {
         <div className={styles.result}>
           <span className={styles.resultBadge}>{result.label}</span>
           <div className={styles.resultSum}>{result.percent}% chance</div>
+        </div>
+      )}
+
+      {expandedHistory.length > 0 && (
+        <div className={styles.historyList}>
+          <span className={styles.historyTitle}>Recent picks</span>
+          {expandedHistory.map((entry) => (
+            <div key={entry.id} className={styles.historyRow}>
+              <span className={styles.historyLabel}>{entry.label}</span>
+              <span className={styles.historyTime}>
+                {new Date(entry.timestamp).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>
