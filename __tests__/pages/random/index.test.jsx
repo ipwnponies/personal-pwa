@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import Random from '../../../pages/random/index';
 import { pwaMetaTags } from '../../../components/layout';
 
@@ -32,5 +32,12 @@ describe('Random page background', () => {
 
     expect(document.documentElement.style.backgroundColor).toBe(expected);
     expect(document.body.style.backgroundColor).toBe(expected);
+  });
+});
+
+describe('Random page tabs', () => {
+  it('renders a Coin tab', () => {
+    render(<Random />);
+    expect(screen.getByText('Coin')).toBeInTheDocument();
   });
 });

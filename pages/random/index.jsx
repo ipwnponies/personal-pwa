@@ -7,6 +7,7 @@ import 'react-tabs/style/react-tabs.css';
 import styles from './index.module.css';
 import DiceRoll from './DiceRoll';
 import WeightedChoices from './WeightedChoices';
+import CoinFlip from './CoinFlip';
 import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
 
@@ -58,7 +59,7 @@ function useHorizontalSwipe(onSwipeLeft, onSwipeRight) {
   return { onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd };
 }
 
-const TAB_COUNT = 2;
+const TAB_COUNT = 3;
 
 export default function Random() {
   const theme = usePageBackground('#1a1a2e');
@@ -104,12 +105,21 @@ export default function Random() {
           >
             Choices
           </Tab>
+          <Tab
+            className={styles.tab}
+            selectedClassName={styles.tabSelected}
+          >
+            Coin
+          </Tab>
         </TabList>
         <TabPanel>
           <DiceRoll />
         </TabPanel>
         <TabPanel>
           <WeightedChoices />
+        </TabPanel>
+        <TabPanel>
+          <CoinFlip />
         </TabPanel>
       </Tabs>
     </div>
