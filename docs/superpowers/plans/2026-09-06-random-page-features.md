@@ -19,6 +19,8 @@
 - `lib/random.js`'s `clamp`/`generateId` are reused by `aquarium` — do not rename or change their signatures.
 - localStorage key for the new Shuffle List feature is exactly `random-shuffle-list` (string value = raw textarea text, not JSON).
 - The Weighted Choices spinner must never compute its own random outcome — it only visualizes the result `weightedRandomChoice` already produced inside `handlePick`.
+- `lib/useFlickGesture.js`'s `FLICK_DISTANCE_THRESHOLD` is **40** (px) and `FLICK_MAX_DURATION_MS` is **400**. `lib/useShakeDetection.js`'s `SHAKE_THRESHOLD` is **15** and `SHAKE_COOLDOWN_MS` is **1000**. Both hooks export these as named constants (not inlined) so tests can reference them instead of duplicating magic numbers.
+- `jsdom` (the test environment) has no real `DeviceMotionEvent`/accelerometer. Any code path that calls `DeviceMotionEvent.requestPermission()` must feature-detect first (`typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'`) so it degrades to a no-op under test and on non-iOS devices, never throwing.
 - After every task, run `npm run test` (whole suite) and `npm run lint` before committing.
 
 ---
@@ -27,18 +29,22 @@
 
 - `pages/random/index.jsx` (rewritten) — tab shell only: `Tabs`/`TabList`/`TabPanel` wiring, `useHorizontalSwipe` hook (page-level swipe between tabs), `TAB_COUNT`, `Head`/PWA meta tags. Imports each tab component.
 - `pages/random/DiceRoll.jsx` (new) — extracted verbatim from the current `index.jsx`, no behavior change.
-- `pages/random/WeightedChoices.jsx` (new) — extracted verbatim (including private `ChoiceRow`/`GroupHeader`), plus the spinner layer added in Task 8.
-- `pages/random/WeightedChoices.module.css` (new, added in Task 8) — spinner-only styles (`.wheelWrap`, `.wheel`, `.wheelPointer`). Existing Weighted Choices styles stay in `index.module.css`, imported alongside.
-- `pages/random/CoinFlip.jsx` (new) + `pages/random/CoinFlip.module.css` (new)
-- `pages/random/MagicEightBall.jsx` (new) + `pages/random/MagicEightBall.module.css` (new)
+- `pages/random/WeightedChoices.jsx` (new) — extracted verbatim (including private `ChoiceRow`/`GroupHeader`), plus the spinner layer added in Task 9.
+- `pages/random/WeightedChoices.module.css` (new, added in Task 9) — spinner-only styles (`.wheelWrap`, `.wheel`, `.wheelPointer`). Existing Weighted Choices styles stay in `index.module.css`, imported alongside.
+- `pages/random/CoinFlip.jsx` (new) + `pages/random/CoinFlip.module.css` (new) — button **and** flick-gesture trigger.
+- `pages/random/MagicEightBall.jsx` (new) + `pages/random/MagicEightBall.module.css` (new) — button **and** physical shake trigger.
 - `pages/random/ShuffleList.jsx` (new) + `pages/random/ShuffleList.module.css` (new)
-- `pages/random/CardDraw.jsx` (new) + `pages/random/CardDraw.module.css` (new)
+- `pages/random/CardDraw.jsx` (new) + `pages/random/CardDraw.module.css` (new) — bulk DRAW button **and** flick-the-deck-face draws one card.
 - `lib/random.js` (modified) — add `shuffle`, `buildDeck`, `drawCards`.
 - `lib/random.test.js` (modified) — tests for the three new helpers.
+- `lib/useFlickGesture.js` (new) — shared one-shot flick detector, used by `CoinFlip` and `CardDraw`.
+- `lib/useFlickGesture.test.js` (new)
+- `lib/useShakeDetection.js` (new) — shared shake detector, used by `MagicEightBall`.
+- `lib/useShakeDetection.test.js` (new)
 - `__tests__/pages/random/index.test.jsx` (modified) — keeps page-level tests (head, background); the `WeightedChoices grouped structure` describe block moves out to its own file; a new describe block asserts all 6 tabs render.
-- `__tests__/pages/random/WeightedChoices.test.jsx` (new) — the migrated Weighted Choices tests (now rendering `<WeightedChoices />` directly, no tab-click needed), plus new spinner tests (Task 8).
+- `__tests__/pages/random/WeightedChoices.test.jsx` (new) — the migrated Weighted Choices tests (now rendering `<WeightedChoices />` directly, no tab-click needed), plus new spinner tests (Task 9).
 - `__tests__/pages/random/DiceRoll.test.jsx`, `CoinFlip.test.jsx`, `MagicEightBall.test.jsx`, `ShuffleList.test.jsx`, `CardDraw.test.jsx` (new).
-- `.claude/rules/random.md` (modified, Task 9) — reflects the new file layout and the four new tools.
+- `.claude/rules/random.md` (modified, Task 10) — reflects the new file layout, the four new tools, and the two new gesture/sensor hooks.
 
 **Design decision — every new component imports `index.module.css` for shared chrome, plus its own `.module.css` only for what's genuinely new** (per the spec's file-split note). This means `.container`, `.rollButton`, `.result`, `.resultBadge`, `.settingRow`, `.settingLabel`, `.settingInput` are reused as-is by the new tools — no duplicate button/layout CSS. `index.module.css`'s content is otherwise untouched, so the existing `__tests__/pages/random/index.module.css.test.js` (which asserts exact breakpoint text) keeps passing unmodified.
 
@@ -1103,7 +1109,297 @@ git commit -m "feat(random): add shuffle, buildDeck, drawCards helpers"
 
 ---
 
-### Task 4: Add Coin Flip tab
+### Task 4: Add `lib/useFlickGesture.js` and `lib/useShakeDetection.js`
+
+**Files:**
+- Create: `lib/useFlickGesture.js`
+- Create: `lib/useFlickGesture.test.js`
+- Create: `lib/useShakeDetection.js`
+- Create: `lib/useShakeDetection.test.js`
+
+**Interfaces:**
+- Produces: `useFlickGesture(onFlick)` → `{ onTouchStart, onTouchEnd }`, plus named exports `FLICK_DISTANCE_THRESHOLD` (40) and `FLICK_MAX_DURATION_MS` (400). `onFlick` is called with `{ dx, dy, distance, duration }` when a touch travels far enough fast enough.
+- Produces: `useShakeDetection(onShake)` → no return value (attaches/detaches a `devicemotion` listener via `useEffect`), plus named exports `SHAKE_THRESHOLD` (15) and `SHAKE_COOLDOWN_MS` (1000). `onShake` is called with no arguments when the frame-to-frame acceleration magnitude delta crosses the threshold, at most once per cooldown window.
+
+- [ ] **Step 1: Write the failing tests for `useFlickGesture`** — create `lib/useFlickGesture.test.js`:
+
+```js
+import { describe, it, expect, vi } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { useFlickGesture, FLICK_DISTANCE_THRESHOLD, FLICK_MAX_DURATION_MS } from './useFlickGesture';
+
+function touchStartEvent(clientX, clientY) {
+  return { touches: [{ clientX, clientY }] };
+}
+
+function touchEndEvent(clientX, clientY) {
+  return { changedTouches: [{ clientX, clientY }] };
+}
+
+describe('useFlickGesture', () => {
+  it('fires onFlick for a fast, far touch sequence', () => {
+    const onFlick = vi.fn();
+    const { result } = renderHook(() => useFlickGesture(onFlick));
+
+    act(() => {
+      result.current.onTouchStart(touchStartEvent(0, 0));
+    });
+    act(() => {
+      result.current.onTouchEnd(touchEndEvent(0, FLICK_DISTANCE_THRESHOLD + 10));
+    });
+
+    expect(onFlick).toHaveBeenCalledTimes(1);
+    expect(onFlick.mock.calls[0][0].distance).toBeGreaterThanOrEqual(FLICK_DISTANCE_THRESHOLD);
+  });
+
+  it('does not fire for a touch that does not travel far enough', () => {
+    const onFlick = vi.fn();
+    const { result } = renderHook(() => useFlickGesture(onFlick));
+
+    act(() => {
+      result.current.onTouchStart(touchStartEvent(0, 0));
+    });
+    act(() => {
+      result.current.onTouchEnd(touchEndEvent(0, FLICK_DISTANCE_THRESHOLD - 10));
+    });
+
+    expect(onFlick).not.toHaveBeenCalled();
+  });
+
+  it('does not fire for a slow touch even if far enough', () => {
+    vi.useFakeTimers();
+    const start = new Date(2024, 0, 1, 0, 0, 0, 0);
+    vi.setSystemTime(start);
+
+    const onFlick = vi.fn();
+    const { result } = renderHook(() => useFlickGesture(onFlick));
+
+    act(() => {
+      result.current.onTouchStart(touchStartEvent(0, 0));
+    });
+
+    vi.setSystemTime(new Date(start.getTime() + FLICK_MAX_DURATION_MS + 50));
+
+    act(() => {
+      result.current.onTouchEnd(touchEndEvent(0, FLICK_DISTANCE_THRESHOLD + 10));
+    });
+
+    expect(onFlick).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('ignores a touchend with no matching touchstart', () => {
+    const onFlick = vi.fn();
+    const { result } = renderHook(() => useFlickGesture(onFlick));
+
+    act(() => {
+      result.current.onTouchEnd(touchEndEvent(0, 100));
+    });
+
+    expect(onFlick).not.toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `npx vitest run lib/useFlickGesture.test.js`
+Expected: FAIL — `./useFlickGesture` module does not exist.
+
+- [ ] **Step 3: Implement `lib/useFlickGesture.js`**
+
+```js
+import { useCallback, useRef } from 'react';
+
+export const FLICK_DISTANCE_THRESHOLD = 40;
+export const FLICK_MAX_DURATION_MS = 400;
+
+// eslint-disable-next-line import/prefer-default-export
+export function useFlickGesture(onFlick) {
+  const touchRef = useRef(null);
+
+  const handleTouchStart = useCallback((e) => {
+    touchRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      startTime: Date.now(),
+    };
+  }, []);
+
+  const handleTouchEnd = useCallback(
+    (e) => {
+      if (!touchRef.current) return;
+      const { startX, startY, startTime } = touchRef.current;
+      touchRef.current = null;
+
+      const dx = e.changedTouches[0].clientX - startX;
+      const dy = e.changedTouches[0].clientY - startY;
+      const distance = Math.hypot(dx, dy);
+      const duration = Date.now() - startTime;
+
+      if (distance >= FLICK_DISTANCE_THRESHOLD && duration <= FLICK_MAX_DURATION_MS) {
+        onFlick({ dx, dy, distance, duration });
+      }
+    },
+    [onFlick],
+  );
+
+  return { onTouchStart: handleTouchStart, onTouchEnd: handleTouchEnd };
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `npx vitest run lib/useFlickGesture.test.js`
+Expected: PASS.
+
+- [ ] **Step 5: Write the failing tests for `useShakeDetection`** — create `lib/useShakeDetection.test.js`:
+
+```js
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { useShakeDetection, SHAKE_THRESHOLD, SHAKE_COOLDOWN_MS } from './useShakeDetection';
+
+function dispatchMotion(z) {
+  const event = new Event('devicemotion');
+  event.accelerationIncludingGravity = { x: 0, y: 0, z };
+  window.dispatchEvent(event);
+}
+
+describe('useShakeDetection', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('fires onShake when the acceleration delta crosses the threshold', () => {
+    const onShake = vi.fn();
+    renderHook(() => useShakeDetection(onShake));
+
+    dispatchMotion(0);
+    dispatchMotion(SHAKE_THRESHOLD + 5);
+
+    expect(onShake).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fire for a small acceleration delta', () => {
+    const onShake = vi.fn();
+    renderHook(() => useShakeDetection(onShake));
+
+    dispatchMotion(0);
+    dispatchMotion(1);
+
+    expect(onShake).not.toHaveBeenCalled();
+  });
+
+  it('does not re-fire within the cooldown window', () => {
+    vi.useFakeTimers();
+    const start = new Date(2024, 0, 1, 0, 0, 0, 0);
+    vi.setSystemTime(start);
+
+    const onShake = vi.fn();
+    renderHook(() => useShakeDetection(onShake));
+
+    dispatchMotion(0);
+    dispatchMotion(SHAKE_THRESHOLD + 5);
+    expect(onShake).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date(start.getTime() + SHAKE_COOLDOWN_MS - 100));
+    dispatchMotion(0);
+    dispatchMotion(SHAKE_THRESHOLD + 5);
+    expect(onShake).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires again after the cooldown window passes', () => {
+    vi.useFakeTimers();
+    const start = new Date(2024, 0, 1, 0, 0, 0, 0);
+    vi.setSystemTime(start);
+
+    const onShake = vi.fn();
+    renderHook(() => useShakeDetection(onShake));
+
+    dispatchMotion(0);
+    dispatchMotion(SHAKE_THRESHOLD + 5);
+    expect(onShake).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date(start.getTime() + SHAKE_COOLDOWN_MS + 100));
+    dispatchMotion(0);
+    dispatchMotion(SHAKE_THRESHOLD + 5);
+    expect(onShake).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores devicemotion events with missing acceleration data', () => {
+    const onShake = vi.fn();
+    renderHook(() => useShakeDetection(onShake));
+
+    window.dispatchEvent(new Event('devicemotion'));
+
+    expect(onShake).not.toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 6: Run tests to verify they fail**
+
+Run: `npx vitest run lib/useShakeDetection.test.js`
+Expected: FAIL — `./useShakeDetection` module does not exist.
+
+- [ ] **Step 7: Implement `lib/useShakeDetection.js`**
+
+```js
+import { useEffect, useRef } from 'react';
+
+export const SHAKE_THRESHOLD = 15;
+export const SHAKE_COOLDOWN_MS = 1000;
+
+// eslint-disable-next-line import/prefer-default-export
+export function useShakeDetection(onShake) {
+  const lastMagnitudeRef = useRef(null);
+  const lastShakeAtRef = useRef(0);
+
+  useEffect(() => {
+    const handleMotion = (event) => {
+      const { x, y, z } = event.accelerationIncludingGravity || {};
+      if (x == null || y == null || z == null) return;
+
+      const magnitude = Math.sqrt(x * x + y * y + z * z);
+      const last = lastMagnitudeRef.current;
+      lastMagnitudeRef.current = magnitude;
+      if (last == null) return;
+
+      const delta = Math.abs(magnitude - last);
+      const now = Date.now();
+      if (delta > SHAKE_THRESHOLD && now - lastShakeAtRef.current > SHAKE_COOLDOWN_MS) {
+        lastShakeAtRef.current = now;
+        onShake();
+      }
+    };
+
+    window.addEventListener('devicemotion', handleMotion);
+    return () => window.removeEventListener('devicemotion', handleMotion);
+  }, [onShake]);
+}
+```
+
+- [ ] **Step 8: Run tests to verify they pass**
+
+Run: `npx vitest run lib/useShakeDetection.test.js`
+Expected: PASS.
+
+- [ ] **Step 9: Run the full test suite and lint**
+
+Run: `npm run test && npm run lint`
+Expected: PASS, no errors.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add lib/useFlickGesture.js lib/useFlickGesture.test.js lib/useShakeDetection.js lib/useShakeDetection.test.js
+git commit -m "feat(random): add useFlickGesture and useShakeDetection hooks"
+```
+
+---
+
+### Task 5: Add Coin Flip tab
 
 **Files:**
 - Create: `pages/random/CoinFlip.jsx`
@@ -1114,7 +1410,7 @@ git commit -m "feat(random): add shuffle, buildDeck, drawCards helpers"
 
 **Interfaces:**
 - Produces: `export default function CoinFlip()`, no props.
-- Consumes: `.container`/`.rollButton` from `./index.module.css`.
+- Consumes: `.container`/`.rollButton` from `./index.module.css`; `useFlickGesture` from `../../lib/useFlickGesture` (Task 4).
 
 - [ ] **Step 1: Write the failing test** — create `__tests__/pages/random/CoinFlip.test.jsx`:
 
@@ -1145,6 +1441,24 @@ describe('CoinFlip', () => {
     expect(screen.getByText('Tails')).toBeInTheDocument();
     Math.random.mockRestore();
   });
+
+  it('flips via a flick gesture on the coin (fast, far touch)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.2);
+    render(<CoinFlip />);
+    const coin = screen.getByTestId('coin');
+    fireEvent.touchStart(coin, { touches: [{ clientX: 0, clientY: 0 }] });
+    fireEvent.touchEnd(coin, { changedTouches: [{ clientX: 0, clientY: 60 }] });
+    expect(screen.getByText('Heads')).toBeInTheDocument();
+    Math.random.mockRestore();
+  });
+
+  it('does not flip on a short touch that is not a flick', () => {
+    render(<CoinFlip />);
+    const coin = screen.getByTestId('coin');
+    fireEvent.touchStart(coin, { touches: [{ clientX: 0, clientY: 0 }] });
+    fireEvent.touchEnd(coin, { changedTouches: [{ clientX: 0, clientY: 5 }] });
+    expect(screen.getByText('?')).toBeInTheDocument();
+  });
 });
 ```
 
@@ -1157,6 +1471,7 @@ Expected: FAIL — `pages/random/CoinFlip` module does not exist.
 
 ```jsx
 import React, { useState } from 'react';
+import { useFlickGesture } from '../../lib/useFlickGesture';
 import indexStyles from './index.module.css';
 import styles from './CoinFlip.module.css';
 
@@ -1171,9 +1486,17 @@ export default function CoinFlip() {
     setFlipCount((count) => count + 1);
   };
 
+  const flick = useFlickGesture(handleFlip);
+
   return (
     <div className={indexStyles.container}>
-      <div key={flipCount} className={styles.coin}>
+      <div
+        key={flipCount}
+        data-testid="coin"
+        className={styles.coin}
+        onTouchStart={flick.onTouchStart}
+        onTouchEnd={flick.onTouchEnd}
+      >
         {result || '?'}
       </div>
       <button type="button" className={indexStyles.rollButton} onClick={handleFlip}>
@@ -1282,7 +1605,7 @@ git commit -m "feat(random): add Coin Flip tab"
 
 ---
 
-### Task 5: Add Magic 8-Ball tab
+### Task 6: Add Magic 8-Ball tab
 
 **Files:**
 - Create: `pages/random/MagicEightBall.jsx`
@@ -1293,6 +1616,7 @@ git commit -m "feat(random): add Coin Flip tab"
 
 **Interfaces:**
 - Produces: `export default function MagicEightBall()`, `export const EIGHT_BALL_ANSWERS` (array of 20 strings, exported so tests can assert against the exact pool).
+- Consumes: `useShakeDetection`, `SHAKE_THRESHOLD` from `../../lib/useShakeDetection` (Task 4).
 
 - [ ] **Step 1: Write the failing test** — create `__tests__/pages/random/MagicEightBall.test.jsx`:
 
@@ -1301,6 +1625,13 @@ import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import MagicEightBall, { EIGHT_BALL_ANSWERS } from '../../../pages/random/MagicEightBall';
+import { SHAKE_THRESHOLD } from '../../../lib/useShakeDetection';
+
+function dispatchMotion(z) {
+  const event = new Event('devicemotion');
+  event.accelerationIncludingGravity = { x: 0, y: 0, z };
+  window.dispatchEvent(event);
+}
 
 describe('MagicEightBall', () => {
   it('shows a placeholder before shaking', () => {
@@ -1312,9 +1643,17 @@ describe('MagicEightBall', () => {
     expect(EIGHT_BALL_ANSWERS).toHaveLength(20);
   });
 
-  it('reveals an answer from the fixed pool after shaking', () => {
+  it('reveals an answer from the fixed pool when the SHAKE button is tapped', () => {
     render(<MagicEightBall />);
     fireEvent.click(screen.getByRole('button', { name: /SHAKE/i }));
+    const revealed = EIGHT_BALL_ANSWERS.find((answer) => screen.queryByText(answer));
+    expect(revealed).toBeDefined();
+  });
+
+  it('reveals an answer when a devicemotion shake event fires', () => {
+    render(<MagicEightBall />);
+    dispatchMotion(0);
+    dispatchMotion(SHAKE_THRESHOLD + 5);
     const revealed = EIGHT_BALL_ANSWERS.find((answer) => screen.queryByText(answer));
     expect(revealed).toBeDefined();
   });
@@ -1330,6 +1669,7 @@ Expected: FAIL — module does not exist.
 
 ```jsx
 import React, { useState } from 'react';
+import { useShakeDetection } from '../../lib/useShakeDetection';
 import indexStyles from './index.module.css';
 import styles from './MagicEightBall.module.css';
 
@@ -1364,18 +1704,36 @@ export default function MagicEightBall() {
     setAnswer(EIGHT_BALL_ANSWERS[index]);
   };
 
+  useShakeDetection(handleShake);
+
+  const handleShakeButtonClick = async () => {
+    const hasMotionPermission =
+      typeof DeviceMotionEvent !== 'undefined' &&
+      typeof DeviceMotionEvent.requestPermission === 'function';
+    if (hasMotionPermission) {
+      try {
+        await DeviceMotionEvent.requestPermission();
+      } catch {
+        // Permission denied or unavailable — handleShake below still reveals an answer.
+      }
+    }
+    handleShake();
+  };
+
   return (
     <div className={indexStyles.container}>
       <div className={styles.ball}>
         <div className={styles.window}>{answer || '?'}</div>
       </div>
-      <button type="button" className={indexStyles.rollButton} onClick={handleShake}>
+      <button type="button" className={indexStyles.rollButton} onClick={handleShakeButtonClick}>
         SHAKE
       </button>
     </div>
   );
 }
 ```
+
+This is the iOS permission gate from the spec: `handleShakeButtonClick` is the required user-gesture context for `DeviceMotionEvent.requestPermission()`. On Android/desktop (no `requestPermission` method) and under `jsdom` (no `DeviceMotionEvent` at all), `hasMotionPermission` is `false`, so the function falls straight through to `handleShake()` — the button always reveals an answer regardless of platform or permission state.
 
 - [ ] **Step 4: Create `pages/random/MagicEightBall.module.css`**
 
@@ -1443,7 +1801,7 @@ git commit -m "feat(random): add Magic 8-Ball tab"
 
 ---
 
-### Task 6: Add Shuffle List tab
+### Task 7: Add Shuffle List tab
 
 **Files:**
 - Create: `pages/random/ShuffleList.jsx`
@@ -1632,7 +1990,7 @@ git commit -m "feat(random): add Shuffle List tab"
 
 ---
 
-### Task 7: Add Card Draw tab
+### Task 8: Add Card Draw tab
 
 **Files:**
 - Create: `pages/random/CardDraw.jsx`
@@ -1642,7 +2000,7 @@ git commit -m "feat(random): add Shuffle List tab"
 - Modify: `__tests__/pages/random/index.test.jsx`
 
 **Interfaces:**
-- Consumes: `buildDeck`, `drawCards`, `shuffle` from `../../lib/random` (Task 3); `useSwipeNumber` from `../../lib/useSwipeNumber`.
+- Consumes: `buildDeck`, `drawCards`, `shuffle` from `../../lib/random` (Task 3); `useSwipeNumber` from `../../lib/useSwipeNumber`; `useFlickGesture` from `../../lib/useFlickGesture` (Task 4).
 - Produces: `export default function CardDraw()`, no props.
 
 - [ ] **Step 1: Write the failing test** — create `__tests__/pages/random/CardDraw.test.jsx`:
@@ -1682,6 +2040,36 @@ describe('CardDraw', () => {
     fireEvent.click(screen.getByRole('button', { name: /NEW DECK/i }));
     expect(screen.getByText('52 cards left')).toBeInTheDocument();
   });
+
+  it('flicking the deck face draws exactly one card', () => {
+    render(<CardDraw />);
+    const deckFace = screen.getByTestId('deckFace');
+    fireEvent.touchStart(deckFace, { touches: [{ clientX: 0, clientY: 0 }] });
+    fireEvent.touchEnd(deckFace, { changedTouches: [{ clientX: 0, clientY: 60 }] });
+    expect(screen.getByText('51 cards left')).toBeInTheDocument();
+  });
+
+  it('a short touch on the deck face does not draw', () => {
+    render(<CardDraw />);
+    const deckFace = screen.getByTestId('deckFace');
+    fireEvent.touchStart(deckFace, { touches: [{ clientX: 0, clientY: 0 }] });
+    fireEvent.touchEnd(deckFace, { changedTouches: [{ clientX: 0, clientY: 5 }] });
+    expect(screen.getByText('52 cards left')).toBeInTheDocument();
+  });
+
+  it('flicking an empty deck does nothing', () => {
+    render(<CardDraw />);
+    const deckFace = screen.getByTestId('deckFace');
+    const input = document.getElementById('drawCount');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '52' } });
+    fireEvent.blur(input);
+    fireEvent.click(screen.getByRole('button', { name: /^DRAW$/i }));
+
+    fireEvent.touchStart(deckFace, { touches: [{ clientX: 0, clientY: 0 }] });
+    fireEvent.touchEnd(deckFace, { changedTouches: [{ clientX: 0, clientY: 60 }] });
+    expect(screen.getByText('0 cards left')).toBeInTheDocument();
+  });
 });
 ```
 
@@ -1695,6 +2083,7 @@ Expected: FAIL — module does not exist.
 ```jsx
 import React, { useState } from 'react';
 import { buildDeck, drawCards, shuffle } from '../../lib/random';
+import { useFlickGesture } from '../../lib/useFlickGesture';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import indexStyles from './index.module.css';
 import styles from './CardDraw.module.css';
@@ -1706,11 +2095,17 @@ export default function CardDraw() {
 
   const count = useSwipeNumber(drawCount, setDrawCount, 1, 52);
 
-  const handleDraw = () => {
-    const result = drawCards(deck, drawCount);
+  const performDraw = (n) => {
+    if (deck.length < n) return;
+    const result = drawCards(deck, n);
     setDrawn(result.drawn);
     setDeck(result.remaining);
   };
+
+  const handleDraw = () => performDraw(drawCount);
+  const handleFlickDraw = () => performDraw(1);
+
+  const flick = useFlickGesture(handleFlickDraw);
 
   const handleNewDeck = () => {
     setDeck(shuffle(buildDeck()));
@@ -1721,6 +2116,15 @@ export default function CardDraw() {
 
   return (
     <div className={indexStyles.container}>
+      <div
+        data-testid="deckFace"
+        className={styles.deckFace}
+        onTouchStart={flick.onTouchStart}
+        onTouchEnd={flick.onTouchEnd}
+      >
+        🂠
+      </div>
+
       <div className={indexStyles.settingRow}>
         <span className={indexStyles.settingLabel}>How many cards?</span>
         <input
@@ -1776,9 +2180,26 @@ export default function CardDraw() {
 }
 ```
 
+`performDraw` is shared by both trigger paths (bulk DRAW button and flick-the-deck) so the "not enough cards left" guard lives in exactly one place; `canDraw` (used only for the DRAW button's disabled state) is a separate, simpler check since the button needs a boolean to render, while the flick path just silently no-ops via the same guard inside `performDraw`.
+
 - [ ] **Step 4: Create `pages/random/CardDraw.module.css`**
 
 ```css
+.deckFace {
+  width: 96px;
+  height: 130px;
+  margin: 0 auto 16px;
+  background: #2a2a3d;
+  border: 2px solid #3a3a5a;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.4rem;
+  color: #4fc3f7;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .deckRow {
   display: flex;
   align-items: center;
@@ -1863,7 +2284,7 @@ git commit -m "feat(random): add Card Draw tab"
 
 ---
 
-### Task 8: Add spinner visual layer to Weighted Choices
+### Task 9: Add spinner visual layer to Weighted Choices
 
 **Files:**
 - Modify: `pages/random/WeightedChoices.jsx`
@@ -2080,7 +2501,7 @@ git commit -m "feat(random): add spinner visual layer to Weighted Choices"
 
 ---
 
-### Task 9: Update `.claude/rules/random.md`
+### Task 10: Update `.claude/rules/random.md`
 
 **Files:**
 - Modify: `.claude/rules/random.md`
@@ -2099,12 +2520,14 @@ Six tools in one page, swipe-navigable tabs.
 - `pages/random/index.jsx` — tab shell only: `Tabs`/`TabList`/`TabPanel` wiring, the horizontal-swipe gesture hook (`useHorizontalSwipe`, page-level swipe between tabs), `TAB_COUNT`. Imports each tab component from a sibling file.
 - `pages/random/DiceRoll.jsx` — dice roller.
 - `pages/random/WeightedChoices.jsx` — weighted random choice picker, including the private `ChoiceRow`/`GroupHeader` components and the spinner-wheel visual layer.
-- `pages/random/CoinFlip.jsx` — coin flip.
-- `pages/random/MagicEightBall.jsx` — Magic 8-Ball, fixed 20-answer pool (`EIGHT_BALL_ANSWERS`).
+- `pages/random/CoinFlip.jsx` — coin flip. FLIP button and a flick gesture on the coin (`lib/useFlickGesture.js`) both trigger the same flip.
+- `pages/random/MagicEightBall.jsx` — Magic 8-Ball, fixed 20-answer pool (`EIGHT_BALL_ANSWERS`). SHAKE button and a physical shake (`lib/useShakeDetection.js`) both reveal an answer.
 - `pages/random/ShuffleList.jsx` — paste a list, shuffle its order.
-- `pages/random/CardDraw.jsx` — draw cards from a 52-card deck without replacement.
+- `pages/random/CardDraw.jsx` — draw cards from a 52-card deck without replacement. Bulk DRAW button (configurable count) and flicking the deck-face (always draws exactly one, via `lib/useFlickGesture.js`) both trigger a draw.
 - `pages/random/index.module.css` — shared page/tab chrome (`.container`, `.rollButton`, `.result`, `.resultBadge`, `.settingRow`, etc.) used by every tab. Each new tab also has its own sibling `.module.css` for styles that don't overlap the shared ones (`CoinFlip.module.css`, `MagicEightBall.module.css`, `ShuffleList.module.css`, `CardDraw.module.css`, `WeightedChoices.module.css`).
 - `lib/random.js` — pure helpers: `weightedRandomChoice`, `generateId`, `clamp`, `shuffle`, `buildDeck`, `drawCards`. `clamp`/`generateId` are also reused by `aquarium` — check before adding near-duplicates elsewhere.
+- `lib/useFlickGesture.js` — one-shot flick detector (fast + far touch), shared by `CoinFlip` and `CardDraw`.
+- `lib/useShakeDetection.js` — physical shake detector via `devicemotion`, used only by `MagicEightBall`. On iOS, `MagicEightBall`'s SHAKE button click handler is also where `DeviceMotionEvent.requestPermission()` gets called (must happen from a direct user gesture) — don't move that call into a `useEffect` or it silently stops working on iOS.
 - Uses `react-tabs` for the tab UI (only page in the app that does).
 
 ## Conventions
@@ -2118,6 +2541,7 @@ Six tools in one page, swipe-navigable tabs.
 - `DiceRoll` does not persist bounds/dice count — that's an existing asymmetry, not an oversight to silently "fix" without checking intent.
 - `ShuffleList` persists only the raw input text to `localStorage` (`random-shuffle-list`), not shuffle results — each SHUFFLE draws fresh from the current text.
 - `CardDraw`'s deck state is session-only (component state, no persistence) — same precedent as `DiceRoll`.
+- Every "physical gesture" trigger (coin flick, deck flick, ball shake) always has a plain-tap fallback (FLIP/DRAW/SHAKE button) that does the exact same thing — gestures are additive, never the only way to use a tool. `jsdom` (tests) and desktop browsers have no touch/motion support, so the fallback is also what most of the test suite exercises.
 - Route is `PWA CacheOnly` (see root AGENTS.md) — this page's route is fully offline-capable, no network dependency in its own logic.
 ```
 
@@ -2125,15 +2549,15 @@ Six tools in one page, swipe-navigable tabs.
 
 ```bash
 git add .claude/rules/random.md
-git commit -m "docs(random): update rules doc for new tabs and file layout"
+git commit -m "docs(random): update rules doc for new tabs, gestures, and file layout"
 ```
 
 ---
 
 ## Self-Review
 
-**Spec coverage:** Coin Flip (Task 4), Magic 8-Ball (Task 5), Shuffle List (Task 6), Card Draw (Task 7), Weighted Choices spinner (Task 8), monolith split (Tasks 1-2), `lib/random.js` helpers (Task 3), and rules-doc update (Task 9, not in the spec's own list but a natural follow-on to keep `.claude/rules/random.md` from going stale) — every spec section maps to a task.
+**Spec coverage:** monolith split (Tasks 1-2), `lib/random.js` helpers (Task 3), shared gesture/sensor hooks `useFlickGesture`/`useShakeDetection` (Task 4), Coin Flip incl. flick (Task 5), Magic 8-Ball incl. shake + iOS permission gate (Task 6), Shuffle List (Task 7), Card Draw incl. flick-the-deck (Task 8), Weighted Choices spinner (Task 9), and rules-doc update (Task 10, not in the spec's own list but a natural follow-on to keep `.claude/rules/random.md` from going stale) — every spec section, including the gesture/shake addendum, maps to a task.
 
 **Placeholder scan:** No "TBD"/"TODO"; every step has literal code. Fixed.
 
-**Type consistency:** `shuffle(items, rng = Math.random)`, `buildDeck()`, `drawCards(deck, n)` signatures match between Task 3's implementation and their Task 6/7 call sites. `EIGHT_BALL_ANSWERS` name matches between Task 5's component and its test import. `data-testid="choiceWheel"` matches between Task 8's markup and its test.
+**Type consistency:** `shuffle(items, rng = Math.random)`, `buildDeck()`, `drawCards(deck, n)` signatures match between Task 3's implementation and their Task 7/8 call sites. `useFlickGesture(onFlick)` → `{ onTouchStart, onTouchEnd }` and `useShakeDetection(onShake)` (Task 4) match their usage in Tasks 5/6/8. `FLICK_DISTANCE_THRESHOLD`/`FLICK_MAX_DURATION_MS`/`SHAKE_THRESHOLD`/`SHAKE_COOLDOWN_MS` are the same named constants in both the Global Constraints section and every task/test that imports them. `EIGHT_BALL_ANSWERS` name matches between Task 6's component and its test import. `data-testid="choiceWheel"` matches between Task 9's markup and its test; `data-testid="coin"` (Task 5) and `data-testid="deckFace"` (Task 8) likewise match between each component and its test.
