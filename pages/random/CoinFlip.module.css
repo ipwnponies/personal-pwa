@@ -1,0 +1,28 @@
+.coin {
+  width: 140px;
+  height: 140px;
+  margin: 32px auto 0;
+  border-radius: 50%;
+  background: #2a2a3d;
+  color: #4fc3f7;
+  font-size: 1.4rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: flip 0.5s ease-out;
+}
+
+@keyframes flip {
+  0% {
+    transform: rotateY(0deg);
+  }
+  50% {
+    transform: rotateY(180deg);
+  }
+  100% {
+    transform: rotateY(360deg);
+  }
+}
