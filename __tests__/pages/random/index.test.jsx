@@ -45,4 +45,9 @@ describe('Random page tabs', () => {
     render(<Random />);
     expect(screen.getByText('8-Ball')).toBeInTheDocument();
   });
+
+  it('renders a Shuffle tab', () => {
+    render(<Random />);
+    expect(screen.getByText('Shuffle')).toBeInTheDocument();
+  });
 });
