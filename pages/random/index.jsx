@@ -1,12 +1,13 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { TabList, Tabs, Tab, TabPanel } from 'react-tabs';
 
 import 'react-tabs/style/react-tabs.css';
 import styles from './index.module.css';
 import { weightedRandomChoice, generateId } from '../../lib/random';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
+import DiceRoll from './DiceRoll';
 import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
 
@@ -56,124 +57,6 @@ function useHorizontalSwipe(onSwipeLeft, onSwipeRight) {
   );
 
   return { onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd };
-}
-
-const rollDice = (lowerBound, upperBound) =>
-  Math.floor(Math.random() * (upperBound - lowerBound + 1)) + lowerBound;
-
-function DiceRoll() {
-  const [lowerBound, setLowerBound] = useState(1);
-  const [upperBound, setUpperBound] = useState(6);
-  const [numDice, setNumDice] = useState(1);
-  const [hasRolled, setHasRolled] = useState(false);
-  const [, forceUpdate] = useReducer((x) => x + 1, 0);
-
-  const lower = useSwipeNumber(lowerBound, setLowerBound, 0, 100);
-  const upper = useSwipeNumber(upperBound, setUpperBound, 1, 100);
-  const dice = useSwipeNumber(numDice, setNumDice, 1, 20);
-
-  const randomValues = [...Array(numDice).keys()].map(() =>
-    rollDice(lowerBound, upperBound),
-  );
-  const sum = randomValues.reduce((previousValue, i) => previousValue + i);
-
-  const handleRoll = () => {
-    setHasRolled(true);
-    forceUpdate();
-  };
-
-  return (
-    <div className={styles.container}>
-      <div className={styles.boundsRow}>
-        <div className={styles.boundCard}>
-          <span className={styles.boundLabel}>Minimum</span>
-          <input
-            id="lowerBound"
-            type="number"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            min={0}
-            max={100}
-            className={styles.boundInput}
-            value={lower.inputValue}
-            placeholder={lower.placeholder}
-            onChange={lower.onChange}
-            onFocus={lower.onFocus}
-            onBlur={lower.onBlur}
-            onKeyDown={lower.onKeyDown}
-            onTouchStart={lower.onTouchStart}
-            onTouchMove={lower.onTouchMove}
-            onTouchEnd={lower.onTouchEnd}
-          />
-        </div>
-        <div className={styles.boundCard}>
-          <span className={styles.boundLabel}>Maximum</span>
-          <input
-            id="upperBound"
-            type="number"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            min={1}
-            max={100}
-            className={styles.boundInput}
-            value={upper.inputValue}
-            placeholder={upper.placeholder}
-            onChange={upper.onChange}
-            onFocus={upper.onFocus}
-            onBlur={upper.onBlur}
-            onKeyDown={upper.onKeyDown}
-            onTouchStart={upper.onTouchStart}
-            onTouchMove={upper.onTouchMove}
-            onTouchEnd={upper.onTouchEnd}
-          />
-        </div>
-      </div>
-
-      <div className={styles.settingRow}>
-        <span className={styles.settingLabel}>How many dice?</span>
-        <input
-          id="numDice"
-          type="number"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          min={1}
-          max={20}
-          className={styles.settingInput}
-          value={dice.inputValue}
-          placeholder={dice.placeholder}
-          onChange={dice.onChange}
-          onFocus={dice.onFocus}
-          onBlur={dice.onBlur}
-          onKeyDown={dice.onKeyDown}
-          onTouchStart={dice.onTouchStart}
-          onTouchMove={dice.onTouchMove}
-          onTouchEnd={dice.onTouchEnd}
-        />
-      </div>
-
-      <button type="button" className={styles.rollButton} onClick={handleRoll}>
-        ROLL
-      </button>
-
-      {hasRolled && (
-        <div className={styles.result}>
-          <div className={styles.resultValues}>
-            {randomValues.map((val, idx) => (
-              // eslint-disable-next-line react/no-array-index-key
-              <span key={idx} className={styles.resultBadge}>
-                {val}
-              </span>
-            ))}
-          </div>
-          {numDice > 1 && (
-            <div className={styles.resultSum}>
-              Sum: <strong>{sum}</strong>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // eslint-disable-next-line react/prop-types
