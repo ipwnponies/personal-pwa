@@ -9,6 +9,7 @@ import DiceRoll from './DiceRoll';
 import WeightedChoices from './WeightedChoices';
 import CoinFlip from './CoinFlip';
 import MagicEightBall from './MagicEightBall';
+import ShuffleList from './ShuffleList';
 import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
 
@@ -60,7 +61,7 @@ function useHorizontalSwipe(onSwipeLeft, onSwipeRight) {
   return { onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd };
 }
 
-const TAB_COUNT = 4;
+const TAB_COUNT = 5;
 
 export default function Random() {
   const theme = usePageBackground('#1a1a2e');
@@ -118,6 +119,12 @@ export default function Random() {
           >
             8-Ball
           </Tab>
+          <Tab
+            className={styles.tab}
+            selectedClassName={styles.tabSelected}
+          >
+            Shuffle
+          </Tab>
         </TabList>
         <TabPanel>
           <DiceRoll />
@@ -130,6 +137,9 @@ export default function Random() {
         </TabPanel>
         <TabPanel>
           <MagicEightBall />
+        </TabPanel>
+        <TabPanel>
+          <ShuffleList />
         </TabPanel>
       </Tabs>
     </div>

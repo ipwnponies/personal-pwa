@@ -1,0 +1,28 @@
+.input {
+  width: 100%;
+  min-height: 160px;
+  background: #2a2a3d;
+  border: none;
+  border-radius: 12px;
+  color: #e0e0e0;
+  font-size: 0.95rem;
+  padding: 16px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  outline: none;
+}
+
+.resultList {
+  text-align: left;
+  max-width: 280px;
+  margin: 0 auto;
+  padding-left: 24px;
+  color: #e0e0e0;
+}
+
+.resultList li {
+  padding: 4px 0;
+}
