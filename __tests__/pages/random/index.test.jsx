@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Random from '../../../pages/random/index';
 import { pwaMetaTags } from '../../../components/layout';
 
@@ -209,6 +209,237 @@ describe('WeightedChoices grouped structure', () => {
 
       // The new Default group must render expanded (not collapsed)
       expect(screen.getAllByPlaceholderText('Add choice...').length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Undo toast', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('shows an undo toast after deleting a choice', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'Choice 1', weight: 1 },
+            { id: 'c2', label: 'Choice 2', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      fireEvent.click(screen.getByText('Choices'));
+
+      await waitFor(() => expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument());
+
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[1]);
+
+      expect(screen.getByText('Choice deleted')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    });
+
+    it('restores a deleted choice at its original index when Undo is clicked', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'Choice 1', weight: 1 },
+            { id: 'c2', label: 'Choice 2', weight: 1 },
+            { id: 'c3', label: 'Choice 3', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      fireEvent.click(screen.getByText('Choices'));
+
+      await waitFor(() => expect(screen.getByDisplayValue('Choice 2')).toBeInTheDocument());
+
+      // Delete the middle choice
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[2]);
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        expect(saved[0].choices.map((c) => c.label)).toEqual(['Choice 1', 'Choice 3']);
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        expect(saved[0].choices.map((c) => c.label)).toEqual(['Choice 1', 'Choice 2', 'Choice 3']);
+      });
+    });
+
+    it('dismisses the undo toast automatically after a few seconds', async () => {
+      vi.useFakeTimers();
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'Choice 1', weight: 1 },
+            { id: 'c2', label: 'Choice 2', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      fireEvent.click(screen.getByText('Choices'));
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[1]);
+
+      expect(screen.getByText('Choice deleted')).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      expect(screen.queryByText('Choice deleted')).not.toBeInTheDocument();
+    });
+
+    it('shows an undo toast after deleting a group and restores it, re-expanded, on Undo', async () => {
+      const groupsData = [
+        { id: 'g1', name: 'First Group', choices: [{ id: 'c1', label: 'Choice 1', weight: 1 }] },
+        { id: 'g2', name: 'Second Group', choices: [] },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      fireEvent.click(screen.getByText('Choices'));
+
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[0]);
+
+      expect(screen.getByText('Group deleted')).toBeInTheDocument();
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        expect(saved.map((g) => g.name)).toEqual(['Second Group']);
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        expect(saved.map((g) => g.name)).toEqual(['First Group', 'Second Group']);
+      });
+
+      // Restored group should be expanded again (its choice is visible)
+      expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument();
+    });
+
+    it('undoing the deletion of a non-expanded group does not disturb the expanded group', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Group A',
+          choices: [
+            { id: 'c1', label: 'Choice A1', weight: 1 },
+            { id: 'c2', label: 'Choice A2', weight: 1 },
+          ],
+        },
+        { id: 'g2', name: 'Group B', choices: [] },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      fireEvent.click(screen.getByText('Choices'));
+
+      // Group A is expanded by default; pick a result in it.
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+      await waitFor(() => {
+        expect(screen.getByText(/Choice A[12]/)).toBeInTheDocument();
+      });
+
+      // Delete the collapsed Group B, then undo it.
+      fireEvent.click(screen.getAllByLabelText('Delete group')[1]);
+      expect(screen.getByText('Group deleted')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        expect(saved.map((g) => g.name)).toEqual(['Group A', 'Group B']);
+      });
+
+      // Group A must still be expanded with its result intact.
+      expect(screen.getByDisplayValue('Choice A1')).toBeInTheDocument();
+      expect(screen.getByText(/Choice A[12]/)).toBeInTheDocument();
+      expect(screen.getByText(/% chance/)).toBeInTheDocument();
+    });
+
+    it('replaces the toast on a new delete, leaving the earlier deletion non-undoable', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'Choice 1', weight: 1 },
+            { id: 'c2', label: 'Choice 2', weight: 1 },
+            { id: 'c3', label: 'Choice 3', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      fireEvent.click(screen.getByText('Choices'));
+
+      await waitFor(() => expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument());
+
+      let deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[1]); // delete Choice 1
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        expect(saved[0].choices.map((c) => c.label)).toEqual(['Choice 2', 'Choice 3']);
+      });
+
+      deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[1]); // delete Choice 2 while toast for Choice 1 is showing
+
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        // Choice 2 restored, Choice 1 stays gone
+        expect(saved[0].choices.map((c) => c.label)).toEqual(['Choice 2', 'Choice 3']);
+      });
+    });
+
+    it('undoing the deletion of the last remaining group removes the auto-created replacement', async () => {
+      const groupsData = [
+        { id: 'g1', name: 'Only Group', choices: [{ id: 'c1', label: 'Choice 1', weight: 1 }] },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      fireEvent.click(screen.getByText('Choices'));
+
+      fireEvent.click(screen.getAllByText('×')[0]);
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        expect(saved).toHaveLength(1);
+        expect(saved[0].name).toBe('Default');
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        expect(saved).toHaveLength(1);
+        expect(saved[0].name).toBe('Only Group');
+        expect(saved[0].choices[0].label).toBe('Choice 1');
+      });
     });
   });
 
