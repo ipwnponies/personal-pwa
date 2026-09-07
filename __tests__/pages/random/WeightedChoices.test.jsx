@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import WeightedChoices from '../../../pages/random/WeightedChoices';
 
@@ -328,6 +328,81 @@ describe('WeightedChoices grouped structure', () => {
         const results = screen.queryAllByText(/\d+% chance/);
         expect(results.length).toBe(0);
       });
+    });
+  });
+
+  describe('Spinner', () => {
+    it('renders a wheel with a data-testid for the current group', () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+      expect(screen.getByTestId('choiceWheel')).toBeInTheDocument();
+    });
+
+    it('PICK still returns a result matching a valid choice label with the spinner present', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/First|Second/)).toBeInTheDocument();
+      });
+    });
+
+    it('rotates the wheel to the exact angle of the chosen wedge (deterministic pick)', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      // buildWheelSegments gives c1 ("First") the range [0, 180) (center 90)
+      // and c2 ("Second") the range [180, 360) (center 270). A low
+      // Math.random() value picks the first item ("First", center 90).
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      const wheel = screen.getByTestId('choiceWheel');
+      expect(wheel.style.transform).toBe('rotate(0deg)');
+
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('First')).toBeInTheDocument();
+      });
+
+      // Fixed formula: rotation = prev - (prev % 360) + 5*360 - center.
+      // prev starts at 0, center for "First" is 90 => 5*360 - 90 = 1710.
+      expect(wheel.style.transform).toBe('rotate(1710deg)');
+
+      randomSpy.mockRestore();
     });
   });
 });
