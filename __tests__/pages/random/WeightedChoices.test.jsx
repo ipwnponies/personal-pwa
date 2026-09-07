@@ -330,4 +330,68 @@ describe('WeightedChoices grouped structure', () => {
       });
     });
   });
+
+  describe('Spinner', () => {
+    it('renders a wheel with a data-testid for the current group', () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+      expect(screen.getByTestId('choiceWheel')).toBeInTheDocument();
+    });
+
+    it('PICK still returns a result matching a valid choice label with the spinner present', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/First|Second/)).toBeInTheDocument();
+      });
+    });
+
+    it('rotates the wheel after a pick', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+      const wheel = screen.getByTestId('choiceWheel');
+      expect(wheel.style.transform).toBe('rotate(0deg)');
+
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+
+      await waitFor(() => {
+        expect(wheel.style.transform).not.toBe('rotate(0deg)');
+      });
+    });
+  });
 });

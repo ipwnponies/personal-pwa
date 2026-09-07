@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { weightedRandomChoice, generateId } from '../../lib/random';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import styles from './index.module.css';
+import wheelStyles from './WeightedChoices.module.css';
 
 // eslint-disable-next-line react/prop-types
 function ChoiceRow({ label, weightValue, totalWeight, onChangeLabel, onChangeWeight, onDelete }) {
@@ -129,6 +130,24 @@ function GroupHeader({ groupName, isExpanded, onToggleExpand, onRename, onDelete
   );
 }
 
+const WHEEL_COLORS = ['#4fc3f7', '#81d4fa', '#0288d1', '#26c6da', '#4dd0e1', '#0097a7'];
+
+function buildWheelSegments(choices) {
+  const total = choices.reduce((sum, c) => sum + c.weight, 0);
+  let cursor = 0;
+  return choices.map((choice, idx) => {
+    const sweep = total > 0 ? (choice.weight / total) * 360 : 0;
+    const segment = {
+      id: choice.id,
+      color: WHEEL_COLORS[idx % WHEEL_COLORS.length],
+      start: cursor,
+      end: cursor + sweep,
+    };
+    cursor += sweep;
+    return segment;
+  });
+}
+
 export default function WeightedChoices() {
   const [groups, setGroups] = useState(() => {
     if (typeof window === 'undefined') return [];
@@ -159,6 +178,7 @@ export default function WeightedChoices() {
   });
 
   const [result, setResult] = useState(null);
+  const [wheelRotation, setWheelRotation] = useState(0);
 
   useEffect(() => {
     localStorage.setItem('random-choices', JSON.stringify(groups));
@@ -264,10 +284,32 @@ export default function WeightedChoices() {
       label: chosen.label,
       percent: Math.round((chosen.weight / validTotal) * 100),
     });
+
+    const segments = buildWheelSegments(valid);
+    const chosenSegment = segments.find((s) => s.id === chosen.id);
+    const center = (chosenSegment.start + chosenSegment.end) / 2;
+    setWheelRotation((prev) => prev - (prev % 360) + 4 * 360 + center);
   };
 
   return (
     <div className={styles.container}>
+      {(() => {
+        const wheelSegments = buildWheelSegments(expandedChoices.filter((c) => c.label.trim()));
+        const gradient =
+          wheelSegments.length > 0
+            ? wheelSegments.map((s) => `${s.color} ${s.start}deg ${s.end}deg`).join(', ')
+            : '#2a2a3d 0deg 360deg';
+        return (
+          <div className={wheelStyles.wheelWrap}>
+            <div className={wheelStyles.wheelPointer} />
+            <div
+              data-testid="choiceWheel"
+              className={wheelStyles.wheel}
+              style={{ background: `conic-gradient(${gradient})`, transform: `rotate(${wheelRotation}deg)` }}
+            />
+          </div>
+        );
+      })()}
       <div className={styles.groupsList}>
         {groups.map((group) => {
           const isExpanded = expandedGroupId === group.id;
