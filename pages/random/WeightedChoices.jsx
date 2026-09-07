@@ -279,6 +279,7 @@ export default function WeightedChoices() {
     const valid = expandedChoices.filter((c) => c.label.trim());
     if (valid.length < 2) return;
     const chosen = weightedRandomChoice(valid);
+    if (!chosen) return;
     const validTotal = valid.reduce((sum, c) => sum + c.weight, 0);
     setResult({
       label: chosen.label,
@@ -288,7 +289,7 @@ export default function WeightedChoices() {
     const segments = buildWheelSegments(valid);
     const chosenSegment = segments.find((s) => s.id === chosen.id);
     const center = (chosenSegment.start + chosenSegment.end) / 2;
-    setWheelRotation((prev) => prev - (prev % 360) + 4 * 360 + center);
+    setWheelRotation((prev) => prev - (prev % 360) + 5 * 360 - center);
   };
 
   return (

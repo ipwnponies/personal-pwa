@@ -8,7 +8,11 @@ const STORAGE_KEY = 'random-shuffle-list';
 export default function ShuffleList() {
   const [text, setText] = useState(() => {
     if (typeof window === 'undefined') return '';
-    return localStorage.getItem(STORAGE_KEY) || '';
+    try {
+      return localStorage.getItem(STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
   });
   const [shuffled, setShuffled] = useState(null);
 
