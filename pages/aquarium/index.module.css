@@ -26,6 +26,10 @@
   overflow: hidden;
   background: linear-gradient(180deg, #0a4a6e 0%, #062f45 100%);
   transition: filter 0.6s ease;
+  /* Fishing casts by dragging down from the tank's top edge; without this,
+     that same drag also reads as the browser's native pull-to-refresh pan
+     (same fix as fitness/random/doodle's drag surfaces). */
+  touch-action: none;
 }
 
 .creature {
