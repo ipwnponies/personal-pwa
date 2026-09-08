@@ -2,6 +2,7 @@
 paths:
   - "pages/aquarium/**"
   - "lib/aquarium/**"
+scope: aquarium
 ---
 
 # Aquarium

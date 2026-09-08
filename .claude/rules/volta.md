@@ -1,6 +1,7 @@
 ---
 paths:
   - "pages/volta/**"
+scope: volta
 ---
 
 # Volta (EV Charger Status)

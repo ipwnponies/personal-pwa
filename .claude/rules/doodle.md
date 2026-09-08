@@ -2,6 +2,7 @@
 paths:
   - "pages/doodle/**"
   - "components/doodle/**"
+scope: doodle
 ---
 
 # Doodle

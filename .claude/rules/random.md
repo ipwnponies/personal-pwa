@@ -3,6 +3,7 @@ paths:
   - "pages/random/**"
   - "lib/random.js"
   - "lib/random.test.js"
+scope: random
 ---
 
 # Random (Dice Roller / Weighted Choices)
