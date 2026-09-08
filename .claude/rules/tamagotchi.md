@@ -2,6 +2,7 @@
 paths:
   - "pages/tamagotchi/**"
   - "lib/tamagotchi/**"
+scope: tamagotchi
 ---
 
 # Tamagotchi

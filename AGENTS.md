@@ -99,6 +99,13 @@ Both fields are expected — there is no validation, but missing `date` breaks s
 - `h1`-`h6` redeclare `--pico-color` from per-level vars (`--pico-hN-color`), so an inherited root-level override never reaches headings anyway.
 - Pages that force their own background color (`fitness`, `doodle`, `random`) must set `data-theme` themselves via `usePageBackground`/`PageThemeScript` (`lib/usePageBackground.jsx`) to keep Pico's text colors legible against it.
 
+## Commit Messages
+
+Conventional Commits shape: `type(scope): description`. When a change lives under one
+module's `paths` (see `.claude/rules/*.md`), use that file's `scope:` frontmatter field
+as the scope — don't guess or infer one from git history. A change spanning multiple
+modules, or matching no rule file, gets no scope.
+
 ## CI/CD
 
 - **Test workflow** (`.github/workflows/test.yml`): Runs on push and PR. Node 20, `npm ci`, `npm test`.

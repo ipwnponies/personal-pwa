@@ -3,6 +3,7 @@ paths:
   - "pages/fitness/**"
   - "lib/epley.js"
   - "lib/epley.test.js"
+scope: fitness
 ---
 
 # Fitness (Rep-Max Calculator)
