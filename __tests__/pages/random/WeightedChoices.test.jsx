@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import WeightedChoices from '../../../pages/random/WeightedChoices';
+import WeightedChoices, { RowPointerSensor } from '../../../pages/random/WeightedChoices';
 
 describe('WeightedChoices grouped structure', () => {
   beforeEach(() => {
@@ -720,6 +720,162 @@ describe('WeightedChoices grouped structure', () => {
       expect(wheel.style.transform).toBe('rotate(1710deg)');
 
       randomSpy.mockRestore();
+    });
+  });
+});
+
+describe('Drag reorder', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  const renderChoicesTab = (groupsData) => {
+    localStorage.setItem('random-choices', JSON.stringify(groupsData));
+    render(<WeightedChoices />);
+  };
+
+  const ONE_GROUP_ONE_CHOICE = [
+    { id: 'g1', name: 'Group A', choices: [{ id: 'c1', label: 'First', weight: 1 }] },
+  ];
+
+  // Types `text` the way a browser does: a keydown whose default is
+  // prevented never inserts its character. Drag sensors that sit on an
+  // ancestor of the input can preventDefault Space, silently making
+  // multi-word values untypable — this surfaces that as a wrong value.
+  const typeText = (input, text) => {
+    Array.from(text).forEach((char) => {
+      const accepted = fireEvent.keyDown(input, {
+        key: char,
+        code: char === ' ' ? 'Space' : `Key${char.toUpperCase()}`,
+      });
+      if (!accepted) return;
+      fireEvent.change(input, { target: { value: input.value + char } });
+    });
+  };
+
+  describe('Drag handle placement', () => {
+    it('puts dnd-kit draggable attributes on a dedicated handle, not on the row', () => {
+      renderChoicesTab(ONE_GROUP_ONE_CHOICE);
+
+      const groupHandle = screen.getByLabelText('Reorder group');
+      const choiceHandle = screen.getByLabelText('Reorder choice');
+
+      [groupHandle, choiceHandle].forEach((handle) => {
+        expect(handle).toHaveAttribute('role', 'button');
+        expect(handle).toHaveAttribute('tabindex', '0');
+        expect(handle).toHaveAttribute('aria-roledescription', 'sortable');
+      });
+
+      // The row itself must stay a plain container: stamping role="button"
+      // on a row that holds real inputs and buttons is invalid ARIA, and it
+      // used to make the row match the sensor's own interactive-element
+      // exclusion, so a drag could never activate at all.
+      expect(choiceHandle.parentElement).not.toHaveAttribute('role');
+      expect(choiceHandle.parentElement).not.toHaveAttribute('tabindex');
+      expect(groupHandle.parentElement).not.toHaveAttribute('role');
+      expect(groupHandle.parentElement).not.toHaveAttribute('tabindex');
+    });
+  });
+
+  describe('Keyboard input is not swallowed by the drag sensors', () => {
+    it('types a multi-word label into a choice input, space included', () => {
+      renderChoicesTab([{ id: 'g1', name: 'Group A', choices: [{ id: 'c1', label: '', weight: 1 }] }]);
+
+      const input = screen.getByPlaceholderText('Choice');
+      typeText(input, 'Two Words');
+
+      expect(input.value).toBe('Two Words');
+    });
+
+    it('types a multi-word name into the group name input, space included', () => {
+      renderChoicesTab([{ id: 'g1', name: 'A', choices: [] }]);
+
+      fireEvent.click(screen.getByText('A'));
+      const input = screen.getByDisplayValue('A');
+      fireEvent.change(input, { target: { value: '' } });
+      typeText(input, 'Two Words');
+
+      expect(input.value).toBe('Two Words');
+    });
+
+    it('leaves Enter usable on the weight and group name inputs', () => {
+      renderChoicesTab(ONE_GROUP_ONE_CHOICE);
+
+      const weightInput = screen.getByDisplayValue('1');
+      expect(fireEvent.keyDown(weightInput, { key: 'Enter', code: 'Enter' })).toBe(true);
+
+      fireEvent.click(screen.getByText('Group A'));
+      const nameInput = screen.getByDisplayValue('Group A');
+      expect(fireEvent.keyDown(nameInput, { key: 'Enter', code: 'Enter' })).toBe(true);
+    });
+
+    it('leaves Enter and Space usable on the row buttons', () => {
+      renderChoicesTab(ONE_GROUP_ONE_CHOICE);
+
+      const buttons = [
+        screen.getByLabelText(/Expand group|Expanded/),
+        screen.getByLabelText('Delete group'),
+      ];
+
+      buttons.forEach((button) => {
+        expect(fireEvent.keyDown(button, { key: 'Enter', code: 'Enter' })).toBe(true);
+        expect(fireEvent.keyDown(button, { key: ' ', code: 'Space' })).toBe(true);
+      });
+    });
+  });
+
+  describe('RowPointerSensor', () => {
+    const press = (target) => {
+      const onActivation = vi.fn();
+      const accepted = RowPointerSensor.activators[0].handler(
+        { nativeEvent: { isPrimary: true, button: 0, target } },
+        { onActivation },
+      );
+      return { accepted, onActivation };
+    };
+
+    it('activates on pointerdown', () => {
+      expect(RowPointerSensor.activators[0].eventName).toBe('onPointerDown');
+    });
+
+    it('accepts a press on a real rendered drag handle', () => {
+      renderChoicesTab(ONE_GROUP_ONE_CHOICE);
+
+      ['Reorder group', 'Reorder choice'].forEach((label) => {
+        const { accepted, onActivation } = press(screen.getByLabelText(label));
+        expect(accepted).toBe(true);
+        expect(onActivation).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it("refuses a press on one of the row's own inputs or buttons", () => {
+      renderChoicesTab(ONE_GROUP_ONE_CHOICE);
+
+      const targets = [
+        screen.getByDisplayValue('First'),
+        screen.getByDisplayValue('1'),
+        screen.getByLabelText('Delete group'),
+      ];
+
+      targets.forEach((target) => {
+        const { accepted, onActivation } = press(target);
+        expect(accepted).toBe(false);
+        expect(onActivation).not.toHaveBeenCalled();
+      });
+    });
+
+    it('refuses non-primary pointers and non-left buttons', () => {
+      const [{ handler }] = RowPointerSensor.activators;
+      const target = document.createElement('span');
+      const onActivation = vi.fn();
+
+      expect(handler({ nativeEvent: { isPrimary: false, button: 0, target } }, { onActivation })).toBe(false);
+      expect(handler({ nativeEvent: { isPrimary: true, button: 2, target } }, { onActivation })).toBe(false);
+      expect(onActivation).not.toHaveBeenCalled();
     });
   });
 });
