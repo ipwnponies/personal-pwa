@@ -285,7 +285,7 @@ describe('WeightedChoices grouped structure', () => {
       // Group A is expanded by default; pick a result in it.
       fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
       await waitFor(() => {
-        expect(screen.getByText(/Choice A[12]/)).toBeInTheDocument();
+        expect(screen.getAllByText(/Choice A[12]/).length).toBeGreaterThan(0);
       });
 
       // Delete the collapsed Group B, then undo it.
@@ -300,7 +300,7 @@ describe('WeightedChoices grouped structure', () => {
 
       // Group A must still be expanded with its result intact.
       expect(screen.getByDisplayValue('Choice A1')).toBeInTheDocument();
-      expect(screen.getByText(/Choice A[12]/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Choice A[12]/).length).toBeGreaterThan(0);
       expect(screen.getByText(/% chance/)).toBeInTheDocument();
     });
 
@@ -508,8 +508,101 @@ describe('WeightedChoices grouped structure', () => {
       fireEvent.click(pickButton);
 
       await waitFor(() => {
-        const resultText = screen.getByText(/First|Second/);
-        expect(resultText).toBeInTheDocument();
+        expect(screen.getAllByText(/First|Second/).length).toBeGreaterThan(0);
+      });
+    });
+
+    it('records a history entry on PICK, persisted under its own storage key', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+
+      const pickButton = screen.getByRole('button', { name: /PICK/i });
+      fireEvent.click(pickButton);
+
+      await waitFor(() => {
+        expect(screen.getAllByText(/First|Second/).length).toBeGreaterThan(0);
+      });
+
+      await waitFor(() => {
+        const savedHistory = JSON.parse(localStorage.getItem('random-choices-history'));
+        expect(savedHistory.g1).toHaveLength(1);
+        expect(['First', 'Second']).toContain(savedHistory.g1[0].label);
+        expect(savedHistory.g1[0]).toHaveProperty('timestamp');
+      });
+
+      expect(localStorage.getItem('random-choices')).not.toContain('history');
+    });
+
+    it('shows only the expanded group history when switching groups', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Group A',
+          choices: [
+            { id: 'c1', label: 'Choice A1', weight: 1 },
+            { id: 'c2', label: 'Choice A2', weight: 1 },
+          ],
+        },
+        {
+          id: 'g2',
+          name: 'Group B',
+          choices: [
+            { id: 'c3', label: 'Choice B1', weight: 1 },
+            { id: 'c4', label: 'Choice B2', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+
+      await waitFor(() => {
+        const savedHistory = JSON.parse(localStorage.getItem('random-choices-history'));
+        expect(savedHistory.g1).toHaveLength(1);
+      });
+
+      expect(screen.getByText('Recent picks')).toBeInTheDocument();
+
+      const expandButtons = screen.getAllByLabelText(/Expand group|Expanded/);
+      fireEvent.click(expandButtons[1]);
+
+      await waitFor(() => {
+        expect(screen.queryByText('Recent picks')).not.toBeInTheDocument();
+      });
+    });
+
+    it('removes a deleted group history', async () => {
+      const groupsData = [
+        { id: 'g1', name: 'First Group', choices: [{ id: 'c1', label: 'Choice 1', weight: 1 }] },
+        { id: 'g2', name: 'Second Group', choices: [] },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      localStorage.setItem(
+        'random-choices-history',
+        JSON.stringify({ g1: [{ id: 'h1', label: 'Choice 1', timestamp: 1 }] }),
+      );
+
+      render(<WeightedChoices />);
+
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[0]);
+
+      await waitFor(() => {
+        const savedHistory = JSON.parse(localStorage.getItem('random-choices-history'));
+        expect(savedHistory.g1).toBeUndefined();
       });
     });
 
@@ -540,7 +633,7 @@ describe('WeightedChoices grouped structure', () => {
       fireEvent.click(pickButton);
 
       await waitFor(() => {
-        expect(screen.getByText(/Choice A[12]/)).toBeInTheDocument();
+        expect(screen.getAllByText(/Choice A[12]/).length).toBeGreaterThan(0);
       });
 
       const expandButtons = screen.getAllByLabelText(/Expand group|Expanded/);
@@ -590,7 +683,7 @@ describe('WeightedChoices grouped structure', () => {
       fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
 
       await waitFor(() => {
-        expect(screen.getByText(/First|Second/)).toBeInTheDocument();
+        expect(screen.getAllByText(/First|Second/).length).toBeGreaterThan(0);
       });
     });
 
@@ -619,7 +712,7 @@ describe('WeightedChoices grouped structure', () => {
       fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
 
       await waitFor(() => {
-        expect(screen.getByText('First')).toBeInTheDocument();
+        expect(screen.getAllByText('First').length).toBeGreaterThan(0);
       });
 
       // Fixed formula: rotation = prev - (prev % 360) + 5*360 - center.
