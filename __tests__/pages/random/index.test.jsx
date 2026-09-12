@@ -460,5 +460,59 @@ describe('WeightedChoices grouped structure', () => {
       expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument();
       expect(screen.queryByText('"Choice 1" deleted')).not.toBeInTheDocument();
     });
+
+    it('shows a toast with the group name after deleting a non-last group, and Undo restores it and its expanded state', async () => {
+      const groupsData = [
+        { id: 'g1', name: 'Group A', choices: [{ id: 'c1', label: 'Choice A', weight: 1 }] },
+        { id: 'g2', name: 'Group B', choices: [{ id: 'c2', label: 'Choice B', weight: 1 }] },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      const choicesTab = screen.getByText('Choices');
+      fireEvent.click(choicesTab);
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Choice A')).toBeInTheDocument();
+      });
+
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[0]);
+
+      expect(screen.getByText('"Group A" deleted')).toBeInTheDocument();
+      expect(screen.queryByText('Group A')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+      expect(screen.getByText('Group A')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Choice A')).toBeInTheDocument();
+    });
+
+    it('shows a toast after deleting the last remaining group, and Undo restores the original group, removing the synthetic Default group', async () => {
+      const groupsData = [
+        { id: 'g1', name: 'Only Group', choices: [{ id: 'c1', label: 'Choice 1', weight: 1 }] },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      const choicesTab = screen.getByText('Choices');
+      fireEvent.click(choicesTab);
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument();
+      });
+
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[0]);
+
+      expect(screen.getByText('"Only Group" deleted')).toBeInTheDocument();
+      expect(screen.getByText('Default')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+      expect(screen.getByText('Only Group')).toBeInTheDocument();
+      expect(screen.queryByText('Default')).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument();
+    });
   });
 });

@@ -447,6 +447,8 @@ function WeightedChoices() {
 
   const handleDeleteGroup = useCallback(
     (groupId) => {
+      const deletedGroup = groups.find((g) => g.id === groupId);
+      const snapshot = { groups, expandedGroupId, result };
       const remaining = groups.filter((g) => g.id !== groupId);
       const newGroup = remaining.length === 0 ? { id: generateId(), name: 'Default', choices: [] } : null;
 
@@ -463,8 +465,12 @@ function WeightedChoices() {
         setExpandedGroupId(remaining[0].id);
         setResult(null);
       }
+
+      if (deletedGroup) {
+        scheduleUndo(snapshot, `"${deletedGroup.name}" deleted`);
+      }
     },
-    [groups, expandedGroupId],
+    [groups, expandedGroupId, result, scheduleUndo],
   );
 
   const handleToggleGroup = (groupId) => {
