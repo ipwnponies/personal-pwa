@@ -15,6 +15,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { weightedRandomChoice, generateId, pushHistoryEntry, reorderById } from '../../lib/random';
+import ShareResultButton from './ShareResultButton';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import styles from './index.module.css';
 import wheelStyles from './WeightedChoices.module.css';
@@ -625,6 +626,7 @@ export default function WeightedChoices() {
         <div className={styles.result}>
           <span className={styles.resultBadge}>{result.label}</span>
           <div className={styles.resultSum}>{result.percent}% chance</div>
+          <ShareResultButton text={`${result.label} (${result.percent}% chance)`} />
         </div>
       )}
 

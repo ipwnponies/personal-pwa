@@ -879,3 +879,60 @@ describe('Drag reorder', () => {
     });
   });
 });
+
+describe('WeightedChoices sharing', () => {
+  const groupsData = [
+    {
+      id: 'g1',
+      name: 'Test Group',
+      choices: [
+        { id: 'c1', label: 'First', weight: 1 },
+        { id: 'c2', label: 'Second', weight: 3 },
+      ],
+    },
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('random-choices', JSON.stringify(groupsData));
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    delete navigator.share;
+    delete navigator.clipboard;
+  });
+
+  it('offers no share action before a pick', () => {
+    render(<WeightedChoices />);
+
+    expect(screen.queryByRole('button', { name: /SHARE/i })).not.toBeInTheDocument();
+  });
+
+  it('shares the picked label with the percentage shown alongside it', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', { value: share, configurable: true });
+    render(<WeightedChoices />);
+
+    fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+    await fireEvent.click(await screen.findByRole('button', { name: /SHARE/i }));
+
+    const { text } = share.mock.calls[0][0];
+    expect(text).toMatch(/^(First \(25% chance\)|Second \(75% chance\))$/);
+
+    const [, label, percent] = text.match(/^(\w+) \((\d+)% chance\)$/);
+    expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    expect(screen.getByText(`${percent}% chance`)).toBeInTheDocument();
+  });
+
+  it('copies the same payload when the share sheet is unavailable', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<WeightedChoices />);
+
+    fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+    await fireEvent.click(await screen.findByRole('button', { name: /SHARE/i }));
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/% chance\)$/));
+  });
+});

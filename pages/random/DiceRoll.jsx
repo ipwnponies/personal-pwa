@@ -1,5 +1,6 @@
 import React, { useReducer, useState } from 'react';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
+import ShareResultButton from './ShareResultButton';
 import styles from './index.module.css';
 
 const rollDice = (lowerBound, upperBound) =>
@@ -20,6 +21,8 @@ export default function DiceRoll() {
     rollDice(lowerBound, upperBound),
   );
   const sum = randomValues.reduce((previousValue, i) => previousValue + i);
+  const shareText =
+    numDice > 1 ? `${randomValues.join(', ')} (sum: ${sum})` : String(randomValues[0]);
 
   const handleRoll = () => {
     setHasRolled(true);
@@ -114,6 +117,7 @@ export default function DiceRoll() {
               Sum: <strong>{sum}</strong>
             </div>
           )}
+          <ShareResultButton text={shareText} />
         </div>
       )}
     </div>

@@ -7,6 +7,8 @@ paths:
   - "lib/useFlickGesture.test.js"
   - "lib/useShakeDetection.js"
   - "lib/useShakeDetection.test.js"
+  - "lib/useShareResult.js"
+  - "lib/useShareResult.test.js"
 scope: random
 ---
 
@@ -23,9 +25,11 @@ Six tools in one page, swipe-navigable tabs.
 - `pages/random/MagicEightBall.jsx` — Magic 8-Ball, fixed 20-answer pool (`EIGHT_BALL_ANSWERS`). SHAKE button and a physical shake (`lib/useShakeDetection.js`) both reveal an answer.
 - `pages/random/ShuffleList.jsx` — paste a list, shuffle its order.
 - `pages/random/CardDraw.jsx` — draw cards from a 52-card deck without replacement. Bulk DRAW button (configurable count) and flicking the deck-face (always draws exactly one, via `lib/useFlickGesture.js`) both trigger a draw.
+- `pages/random/ShareResultButton.jsx` — shared SHARE button rendered inside a tab's result block. Used by `DiceRoll` and `WeightedChoices`; the other four tabs have no share action yet.
 - `pages/random/index.module.css` — shared page/tab chrome (`.container`, `.rollButton`, `.result`, `.resultBadge`, `.settingRow`, etc.) used by every tab. Each new tab also has its own sibling `.module.css` for styles that don't overlap the shared ones (`CoinFlip.module.css`, `MagicEightBall.module.css`, `ShuffleList.module.css`, `CardDraw.module.css`, `WeightedChoices.module.css`).
 - `lib/random.js` — pure helpers: `weightedRandomChoice`, `generateId`, `clamp`, `shuffle`, `buildDeck`, `drawCards`, `reorderById`. `clamp`/`generateId` are also reused by `aquarium` — check before adding near-duplicates elsewhere.
 - `lib/useFlickGesture.js` — one-shot flick detector (fast + far touch), shared by `CoinFlip` and `CardDraw`.
+- `lib/useShareResult.js` — `useShareResult()` returns `{ share, status }`. `share(text)` prefers `navigator.share({ text })` and falls back to `navigator.clipboard.writeText`; `status` is `idle | shared | copied | error` and self-clears after `SHARE_STATUS_RESET_MS`.
 - `lib/useShakeDetection.js` — physical shake detector via `devicemotion`, used only by `MagicEightBall`. On iOS, `MagicEightBall`'s SHAKE button click handler is also where `DeviceMotionEvent.requestPermission()` gets called (must happen from a direct user gesture) — don't move that call into a `useEffect` or it silently stops working on iOS.
 - Uses `react-tabs` for the tab UI (only page in the app that does).
 
@@ -45,4 +49,6 @@ Six tools in one page, swipe-navigable tabs.
 - Drag activates on a 200ms long-press (mouse or touch, one `PointerSensor`) of a row's dedicated `DragHandle` — **never** the row itself. `useSortable`'s `listeners`, `attributes` and `setActivatorNodeRef` are all bound to that handle, and `touch-action: none` lives on `.dragHandle` only. Do not move any of them onto a `GroupHeader`/`ChoiceRow` root: `attributes` stamps `role="button"`/`tabIndex` (invalid ARIA around the row's real controls, and `closest()` is self-inclusive so the sensor would refuse every drag), `listeners` puts the `KeyboardSensor`'s `onKeyDown` above the row's inputs where it `preventDefault`s Space and Enter, and row-level `touch-action: none` blocks list scrolling.
 - `RowPointerSensor` in `pages/random/WeightedChoices.jsx` additionally refuses activation from `input, button` (defence in depth — the weight input owns its own swipe-to-adjust gesture). The selector must not include `[role="button"]`; the handle carries that role. Its `activators` are assigned after the class body, not as a `static` class field — ESLint runs at `ecmaVersion: 12` and an unparseable file silently loses all rule coverage.
 - The drag handle stops `touchmove` propagation so a drag never reaches `useHorizontalSwipe`'s tab-swipe classifier, mirroring `lib/useSwipeNumber.js`. The `restrictToVerticalAxis` modifier only affects dnd-kit's rendered transform and does **not** guard against this on its own.
+- Sharing a result goes through `ShareResultButton`, never `navigator.share` inline in a tab. Two rules that look like nits but are not: a rejection with `name === 'AbortError'` means the user dismissed the share sheet, so it returns to `idle` and must **not** fall through to a clipboard write; and capability detection happens inside the click handler only — branching on `navigator.share` during render mismatches between the static export and a phone.
+- Share payload is the bare result text (`4, 6 (sum: 10)`, `Pizza (35% chance)`), no tab-name prefix and no page URL — a `PAGES_BASE_PATH`-dependent URL would differ between dev and the deployed site. Each tab builds that string in its own render pass from the same state the result block displays, so what is shared always matches what is on screen (this matters for `DiceRoll`, which recomputes its values on every render).
 - Route is `PWA CacheOnly` (see root AGENTS.md) — this page's route is fully offline-capable, no network dependency in its own logic.
