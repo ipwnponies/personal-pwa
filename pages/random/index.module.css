@@ -100,6 +100,14 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Pico's `input:not(...)` rules for padding/margin-bottom outweigh a single class
+   selector (specificity 0,1,1 vs 0,1,0); double the class to win without !important.
+   (width:100% is not overridden here: Pico's own value already matches ours.) */
+.boundInput.boundInput {
+  padding: 12px 0;
+  margin-bottom: 0;
+}
+
 .boundInput::-webkit-outer-spin-button,
 .boundInput::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -139,6 +147,12 @@
   touch-action: none;
   -moz-appearance: textfield;
   -webkit-tap-highlight-color: transparent;
+}
+
+.settingInput.settingInput {
+  width: 72px;
+  padding: 20px 0;
+  margin-bottom: 0;
 }
 
 .settingInput::-webkit-outer-spin-button,
@@ -287,6 +301,14 @@
   padding: 8px 4px;
 }
 
+/* `flex: 1` already fixes the width fight (flex-basis wins over `width` for a flex
+   item), but Pico's padding/margin-bottom rules still win on specificity and need
+   the same double-class override. */
+.groupNameInput.groupNameInput {
+  padding: 8px 4px;
+  margin-bottom: 0;
+}
+
 .groupNameInput:focus {
   outline: none;
   color: #81d4fa;
@@ -356,6 +378,14 @@
   min-width: 0;
 }
 
+/* `flex: 1` already fixes the width fight (flex-basis wins over `width` for a flex
+   item), but Pico's padding/margin-bottom rules still win on specificity and need
+   the same double-class override. */
+.choiceLabelInput.choiceLabelInput {
+  padding: 8px 4px;
+  margin-bottom: 0;
+}
+
 .choiceLabelInput:focus {
   outline: none;
   border-bottom-color: #4fc3f7;
@@ -381,6 +411,12 @@
   touch-action: none;
   -moz-appearance: textfield;
   -webkit-tap-highlight-color: transparent;
+}
+
+.choiceWeightInput.choiceWeightInput {
+  width: 48px;
+  padding: 8px 0;
+  margin-bottom: 0;
 }
 
 .choiceWeightInput::-webkit-outer-spin-button,
