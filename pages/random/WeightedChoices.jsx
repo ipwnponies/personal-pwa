@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { weightedRandomChoice, generateId } from '../../lib/random';
+import { weightedRandomChoice, generateId, pushHistoryEntry } from '../../lib/random';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import styles from './index.module.css';
 import wheelStyles from './WeightedChoices.module.css';
+
+const HISTORY_STORAGE_KEY = 'random-choices-history';
+const MAX_HISTORY_ENTRIES = 20;
 
 // eslint-disable-next-line react/prop-types
 function ChoiceRow({ label, weightValue, totalWeight, onChangeLabel, onChangeWeight, onDelete }) {
@@ -182,6 +185,16 @@ export default function WeightedChoices() {
   const [undoToast, setUndoToast] = useState(null);
   const undoTimerRef = useRef(null);
 
+  const [history, setHistory] = useState(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
   useEffect(() => {
     localStorage.setItem('random-choices', JSON.stringify(groups));
   }, [groups]);
@@ -201,10 +214,15 @@ export default function WeightedChoices() {
     setUndoToast(null);
   }, [undoToast]);
 
+  useEffect(() => {
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+  }, [history]);
+
   const expandedGroup = groups.find((g) => g.id === expandedGroupId);
   const expandedChoices = expandedGroup?.choices || [];
   const totalWeight = expandedChoices.reduce((sum, c) => sum + c.weight, 0);
   const canPick = expandedChoices.filter((c) => c.label.trim()).length >= 2;
+  const expandedHistory = history[expandedGroupId] || [];
 
   const [ghostKeyChoice, setGhostKeyChoice] = useState(0);
   const [ghostKeyGroup, setGhostKeyGroup] = useState(0);
@@ -283,6 +301,7 @@ export default function WeightedChoices() {
     (groupId) => {
       const index = groups.findIndex((g) => g.id === groupId);
       const deletedGroup = groups[index];
+      const deletedGroupHistory = history[groupId];
       const wasExpanded = expandedGroupId === groupId;
       const remaining = groups.filter((g) => g.id !== groupId);
       const newGroup = remaining.length === 0 ? { id: generateId(), name: 'Default', choices: [] } : null;
@@ -290,6 +309,11 @@ export default function WeightedChoices() {
       setGroups((prev) => {
         const filtered = prev.filter((g) => g.id !== groupId);
         return filtered.length === 0 ? [newGroup] : filtered;
+      });
+
+      setHistory((prev) => {
+        const { [groupId]: _removed, ...rest } = prev;
+        return rest;
       });
 
       if (newGroup) {
@@ -308,6 +332,9 @@ export default function WeightedChoices() {
           next.splice(index, 0, deletedGroup);
           return next;
         });
+        if (deletedGroupHistory) {
+          setHistory((prev) => ({ ...prev, [deletedGroup.id]: deletedGroupHistory }));
+        }
         // Only the deleted group's own view was disturbed; leave an unrelated
         // expanded group (and its pick result) alone.
         if (newGroup || wasExpanded) {
@@ -316,7 +343,7 @@ export default function WeightedChoices() {
         }
       });
     },
-    [groups, expandedGroupId, showUndoToast],
+    [groups, history, expandedGroupId, showUndoToast],
   );
 
   const handleToggleGroup = (groupId) => {
@@ -334,6 +361,15 @@ export default function WeightedChoices() {
       label: chosen.label,
       percent: Math.round((chosen.weight / validTotal) * 100),
     });
+
+    setHistory((prev) => ({
+      ...prev,
+      [expandedGroupId]: pushHistoryEntry(
+        prev[expandedGroupId] || [],
+        { id: generateId(), label: chosen.label, timestamp: Date.now() },
+        MAX_HISTORY_ENTRIES,
+      ),
+    }));
 
     const segments = buildWheelSegments(valid);
     const chosenSegment = segments.find((s) => s.id === chosen.id);
@@ -435,6 +471,23 @@ export default function WeightedChoices() {
           <button type="button" className={wheelStyles.undoButton} onClick={handleUndo}>
             Undo
           </button>
+        </div>
+      )}
+
+      {expandedHistory.length > 0 && (
+        <div className={styles.historyList}>
+          <span className={styles.historyTitle}>Recent picks</span>
+          {expandedHistory.map((entry) => (
+            <div key={entry.id} className={styles.historyRow}>
+              <span className={styles.historyLabel}>{entry.label}</span>
+              <span className={styles.historyTime}>
+                {new Date(entry.timestamp).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>
