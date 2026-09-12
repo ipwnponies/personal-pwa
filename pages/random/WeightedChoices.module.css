@@ -1,0 +1,26 @@
+.wheelWrap {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  margin: 16px auto;
+}
+
+.wheel {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  transition: transform 3s cubic-bezier(0.15, 0.85, 0.25, 1);
+}
+
+.wheelPointer {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 16px solid #e0e0e0;
+  z-index: 1;
+}
