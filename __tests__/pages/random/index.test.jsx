@@ -554,34 +554,36 @@ describe('WeightedChoices grouped structure', () => {
 
     it('auto-dismisses the toast after the undo timeout, leaving the deletion final', async () => {
       vi.useFakeTimers();
-      const groupsData = [
-        {
-          id: 'g1',
-          name: 'Test Group',
-          choices: [
-            { id: 'c1', label: 'Choice 1', weight: 1 },
-            { id: 'c2', label: 'Choice 2', weight: 1 },
-          ],
-        },
-      ];
-      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      try {
+        const groupsData = [
+          {
+            id: 'g1',
+            name: 'Test Group',
+            choices: [
+              { id: 'c1', label: 'Choice 1', weight: 1 },
+              { id: 'c2', label: 'Choice 2', weight: 1 },
+            ],
+          },
+        ];
+        localStorage.setItem('random-choices', JSON.stringify(groupsData));
 
-      render(<Random />);
-      const choicesTab = screen.getByText('Choices');
-      fireEvent.click(choicesTab);
+        render(<Random />);
+        const choicesTab = screen.getByText('Choices');
+        fireEvent.click(choicesTab);
 
-      const deleteButtons = screen.getAllByText('×');
-      fireEvent.click(deleteButtons[1]);
-      expect(screen.getByText('"Choice 1" deleted')).toBeInTheDocument();
+        const deleteButtons = screen.getAllByText('×');
+        fireEvent.click(deleteButtons[1]);
+        expect(screen.getByText('"Choice 1" deleted')).toBeInTheDocument();
 
-      act(() => {
-        vi.advanceTimersByTime(5000);
-      });
+        act(() => {
+          vi.advanceTimersByTime(5000);
+        });
 
-      expect(screen.queryByText('"Choice 1" deleted')).not.toBeInTheDocument();
-      expect(screen.queryByDisplayValue('Choice 1')).not.toBeInTheDocument();
-
-      vi.useRealTimers();
+        expect(screen.queryByText('"Choice 1" deleted')).not.toBeInTheDocument();
+        expect(screen.queryByDisplayValue('Choice 1')).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
