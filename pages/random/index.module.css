@@ -243,6 +243,14 @@
   background: #2a2a3d;
 }
 
+/* dnd-kit positions a dragged row with a CSS transform, which doesn't
+ * change layout/overflow bounds — without this, the container's own
+ * `overflow: hidden` (kept above for the rounded-corner clip at rest)
+ * would clip the dragged row the moment it moves past its static box. */
+.groupContainer:has(.dragging) {
+  overflow: visible;
+}
+
 .groupHeader {
   display: flex;
   align-items: center;
@@ -353,6 +361,13 @@
   overflow: hidden;
 }
 
+/* Same reasoning as .groupContainer:has(.dragging) above — a dragged
+ * choice row's transform must not be clipped by this list's own
+ * overflow: hidden. */
+.choicesList:has(.dragging) {
+  overflow: visible;
+}
+
 .choiceRow {
   display: flex;
   align-items: center;
@@ -460,6 +475,45 @@
 .rollButtonDisabled {
   opacity: 0.4;
   pointer-events: none;
+}
+
+.dragging {
+  opacity: 0.5;
+}
+
+/*
+ * The only drag-activation target for a group header or a choice row.
+ * `touch-action: none` lives here rather than on the row so rows still
+ * scroll normally under a touch that isn't on the handle.
+ */
+.dragHandle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  align-self: stretch;
+  color: #666;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dragHandle:hover {
+  color: #888;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.dragHandle:focus-visible {
+  outline: 1px solid #4fc3f7;
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* Pick history */
