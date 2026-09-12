@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Random from '../../../pages/random/index';
 import { pwaMetaTags } from '../../../components/layout';
 
@@ -513,6 +513,75 @@ describe('WeightedChoices grouped structure', () => {
       expect(screen.getByText('Only Group')).toBeInTheDocument();
       expect(screen.queryByText('Default')).not.toBeInTheDocument();
       expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument();
+    });
+
+    it('a second delete before Undo is clicked replaces the toast; the first deletion is no longer undoable', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'Choice 1', weight: 1 },
+            { id: 'c2', label: 'Choice 2', weight: 1 },
+            { id: 'c3', label: 'Choice 3', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      const choicesTab = screen.getByText('Choices');
+      fireEvent.click(choicesTab);
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument();
+      });
+
+      let deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[1]);
+      expect(screen.getByText('"Choice 1" deleted')).toBeInTheDocument();
+
+      deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[1]);
+      expect(screen.getByText('"Choice 2" deleted')).toBeInTheDocument();
+      expect(screen.queryByText('"Choice 1" deleted')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+      expect(screen.getByDisplayValue('Choice 2')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue('Choice 1')).not.toBeInTheDocument();
+    });
+
+    it('auto-dismisses the toast after the undo timeout, leaving the deletion final', async () => {
+      vi.useFakeTimers();
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'Choice 1', weight: 1 },
+            { id: 'c2', label: 'Choice 2', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      const choicesTab = screen.getByText('Choices');
+      fireEvent.click(choicesTab);
+
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[1]);
+      expect(screen.getByText('"Choice 1" deleted')).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      expect(screen.queryByText('"Choice 1" deleted')).not.toBeInTheDocument();
+      expect(screen.queryByDisplayValue('Choice 1')).not.toBeInTheDocument();
+
+      vi.useRealTimers();
     });
   });
 });
