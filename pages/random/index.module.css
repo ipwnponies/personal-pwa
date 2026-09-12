@@ -426,6 +426,43 @@
   pointer-events: none;
 }
 
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #2a2a3d;
+  border: 1px solid #3a3a5a;
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+
+.toastMessage {
+  font-size: 0.9rem;
+  color: #e0e0e0;
+}
+
+.toastUndoButton {
+  background: none;
+  border: none;
+  color: #4fc3f7;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toastUndoButton:hover {
+  color: #81d4fa;
+}
+
 /* Tablet portrait and up (iPad and similar) */
 @media (min-width: 768px) {
   .tabs {

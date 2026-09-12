@@ -11,6 +11,7 @@ import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground'
 import { pwaMetaTags } from '../../components/layout';
 
 const HORIZONTAL_SWIPE_THRESHOLD = 50;
+const UNDO_TIMEOUT_MS = 5000;
 
 function useHorizontalSwipe(onSwipeLeft, onSwipeRight) {
   const touchRef = useRef(null);
@@ -333,6 +334,41 @@ function WeightedChoices() {
 
   const [result, setResult] = useState(null);
 
+  const [pendingUndo, setPendingUndo] = useState(null);
+  const undoTimerRef = useRef(null);
+
+  useEffect(
+    () => () => {
+      if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const scheduleUndo = useCallback((snapshot, message) => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+    }
+    setPendingUndo({ snapshot, message });
+    undoTimerRef.current = setTimeout(() => {
+      setPendingUndo(null);
+      undoTimerRef.current = null;
+    }, UNDO_TIMEOUT_MS);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (!pendingUndo) return;
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    setGroups(pendingUndo.snapshot.groups);
+    setExpandedGroupId(pendingUndo.snapshot.expandedGroupId);
+    setResult(pendingUndo.snapshot.result);
+    setPendingUndo(null);
+  }, [pendingUndo]);
+
   useEffect(() => {
     localStorage.setItem('random-choices', JSON.stringify(groups));
   }, [groups]);
@@ -393,8 +429,16 @@ function WeightedChoices() {
   );
 
   const handleDeleteChoice = useCallback(
-    (groupId, id) => updateGroupChoices(groupId, (choices) => choices.filter((c) => c.id !== id)),
-    [updateGroupChoices],
+    (groupId, id) => {
+      const group = groups.find((g) => g.id === groupId);
+      const choice = group?.choices.find((c) => c.id === id);
+      const snapshot = { groups, expandedGroupId, result };
+      updateGroupChoices(groupId, (choices) => choices.filter((c) => c.id !== id));
+      if (choice) {
+        scheduleUndo(snapshot, `"${choice.label}" deleted`);
+      }
+    },
+    [groups, expandedGroupId, result, updateGroupChoices, scheduleUndo],
   );
 
   const handleRenameGroup = useCallback((groupId, newName) => {
@@ -507,6 +551,15 @@ function WeightedChoices() {
         <div className={styles.result}>
           <span className={styles.resultBadge}>{result.label}</span>
           <div className={styles.resultSum}>{result.percent}% chance</div>
+        </div>
+      )}
+
+      {pendingUndo && (
+        <div className={styles.toast}>
+          <span className={styles.toastMessage}>{pendingUndo.message}</span>
+          <button type="button" className={styles.toastUndoButton} onClick={handleUndo}>
+            Undo
+          </button>
         </div>
       )}
     </div>

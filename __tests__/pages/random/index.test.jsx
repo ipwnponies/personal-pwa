@@ -426,4 +426,39 @@ describe('WeightedChoices grouped structure', () => {
       });
     });
   });
+
+  describe('Undo toast on delete', () => {
+    it('shows a toast with the choice label after deleting a choice, and Undo restores it', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'Choice 1', weight: 1 },
+            { id: 'c2', label: 'Choice 2', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      const choicesTab = screen.getByText('Choices');
+      fireEvent.click(choicesTab);
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument();
+      });
+
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[1]);
+
+      expect(screen.getByText('"Choice 1" deleted')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue('Choice 1')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+      expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument();
+      expect(screen.queryByText('"Choice 1" deleted')).not.toBeInTheDocument();
+    });
+  });
 });
