@@ -36,6 +36,12 @@ undoes the delete and any side effect it triggered, uniformly, with no
 special-casing. `groups` is small (a handful of groups/choices in normal
 use), so copying it is cheap.
 
+**Dismissal on other mutation.** The snapshot is only valid against the
+state it was taken from, so any other action that mutates `groups`
+(editing a label or weight, adding a choice or group, renaming a group)
+must dismiss the pending undo before it mutates state, rather than let a
+later Undo silently overwrite that edit.
+
 **One undo slot.** A new delete replaces any existing `pendingUndo` —
 consistent with common toast UX (e.g. Gmail): only the most recent action is
 undoable. The prior pending delete simply finalizes (no toast, no further

@@ -552,6 +552,43 @@ describe('WeightedChoices grouped structure', () => {
       expect(screen.queryByDisplayValue('Choice 1')).not.toBeInTheDocument();
     });
 
+    it('dismisses the pending undo when a new choice is added while the toast is showing, so Undo does not wipe it out', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'Choice 1', weight: 1 },
+            { id: 'c2', label: 'Choice 2', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<Random />);
+      const choicesTab = screen.getByText('Choices');
+      fireEvent.click(choicesTab);
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Choice 1')).toBeInTheDocument();
+      });
+
+      const deleteButtons = screen.getAllByText('×');
+      fireEvent.click(deleteButtons[1]);
+      expect(screen.getByText('"Choice 1" deleted')).toBeInTheDocument();
+
+      const addChoiceInput = screen.getByPlaceholderText('Add choice...');
+      fireEvent.change(addChoiceInput, { target: { value: 'Choice 3' } });
+      fireEvent.blur(addChoiceInput);
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Choice 3')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('"Choice 1" deleted')).not.toBeInTheDocument();
+
+      expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+    });
+
     it('auto-dismisses the toast after the undo timeout, leaving the deletion final', async () => {
       vi.useFakeTimers();
       try {

@@ -429,11 +429,12 @@
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 16px;
+  max-width: calc(100vw - 32px);
   background: #2a2a3d;
   border: 1px solid #3a3a5a;
   border-radius: 12px;
@@ -445,6 +446,10 @@
 .toastMessage {
   font-size: 0.9rem;
   color: #e0e0e0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .toastUndoButton {
@@ -456,6 +461,7 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   cursor: pointer;
+  flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
 }
 

@@ -357,6 +357,14 @@ function WeightedChoices() {
     }, UNDO_TIMEOUT_MS);
   }, []);
 
+  const dismissPendingUndo = useCallback(() => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    setPendingUndo(null);
+  }, []);
+
   const handleUndo = useCallback(() => {
     if (!pendingUndo) return;
     if (undoTimerRef.current) {
@@ -384,6 +392,7 @@ function WeightedChoices() {
   const handleAddChoice = (e) => {
     const label = e.target.value.trim();
     if (label && expandedGroupId) {
+      dismissPendingUndo();
       setGroups((prev) =>
         prev.map((g) =>
           g.id === expandedGroupId
@@ -398,6 +407,7 @@ function WeightedChoices() {
   const handleAddGroup = (e) => {
     const name = e.target.value.trim();
     if (name) {
+      dismissPendingUndo();
       const newGroupId = generateId();
       setGroups((prev) => [...prev, { id: newGroupId, name, choices: [] }]);
       setExpandedGroupId(newGroupId);
@@ -413,19 +423,23 @@ function WeightedChoices() {
   }, []);
 
   const handleChangeLabel = useCallback(
-    (groupId, id, label) =>
+    (groupId, id, label) => {
+      dismissPendingUndo();
       updateGroupChoices(groupId, (choices) =>
         choices.map((c) => (c.id === id ? { ...c, label } : c)),
-      ),
-    [updateGroupChoices],
+      );
+    },
+    [dismissPendingUndo, updateGroupChoices],
   );
 
   const handleChangeWeight = useCallback(
-    (groupId, id, weight) =>
+    (groupId, id, weight) => {
+      dismissPendingUndo();
       updateGroupChoices(groupId, (choices) =>
         choices.map((c) => (c.id === id ? { ...c, weight } : c)),
-      ),
-    [updateGroupChoices],
+      );
+    },
+    [dismissPendingUndo, updateGroupChoices],
   );
 
   const handleDeleteChoice = useCallback(
@@ -441,9 +455,13 @@ function WeightedChoices() {
     [groups, expandedGroupId, result, updateGroupChoices, scheduleUndo],
   );
 
-  const handleRenameGroup = useCallback((groupId, newName) => {
-    setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, name: newName } : g)));
-  }, []);
+  const handleRenameGroup = useCallback(
+    (groupId, newName) => {
+      dismissPendingUndo();
+      setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, name: newName } : g)));
+    },
+    [dismissPendingUndo],
+  );
 
   const handleDeleteGroup = useCallback(
     (groupId) => {
@@ -561,7 +579,7 @@ function WeightedChoices() {
       )}
 
       {pendingUndo && (
-        <div className={styles.toast}>
+        <div className={styles.toast} role="status" aria-live="polite">
           <span className={styles.toastMessage}>{pendingUndo.message}</span>
           <button type="button" className={styles.toastUndoButton} onClick={handleUndo}>
             Undo
