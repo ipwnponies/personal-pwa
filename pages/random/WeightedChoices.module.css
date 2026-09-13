@@ -59,3 +59,28 @@
 .undoButton:hover {
   color: #81d4fa;
 }
+
+/* No-replacement (raffle) mode: dim a drawn row's whole line. Not
+   text-decoration on the label input — form controls don't inherit
+   text-decoration from an ancestor, so it would never render. */
+.choiceDrawn {
+  opacity: 0.5;
+}
+
+.resetPoolButton {
+  background: none;
+  border: 1px solid #3a3a5a;
+  border-radius: 8px;
+  color: #4fc3f7;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  margin: 8px 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.resetPoolButton:disabled {
+  color: #666;
+  border-color: #2a2a3d;
+  cursor: default;
+}
