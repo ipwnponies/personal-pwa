@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { buildDeck, drawCards, shuffle } from '../../lib/random';
 import { useFlickGesture } from '../../lib/useFlickGesture';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
+import { useSoundCue } from './SoundContext';
 import indexStyles from './index.module.css';
 import styles from './CardDraw.module.css';
 
@@ -9,6 +10,7 @@ export default function CardDraw() {
   const [deck, setDeck] = useState(() => shuffle(buildDeck()));
   const [drawCount, setDrawCount] = useState(1);
   const [drawn, setDrawn] = useState([]);
+  const play = useSoundCue();
 
   const count = useSwipeNumber(drawCount, setDrawCount, 1, 52);
 
@@ -17,6 +19,7 @@ export default function CardDraw() {
     const result = drawCards(deck, n);
     setDrawn(result.drawn);
     setDeck(result.remaining);
+    play('draw');
   };
 
   const handleDraw = () => performDraw(drawCount);

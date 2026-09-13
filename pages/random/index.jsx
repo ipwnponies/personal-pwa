@@ -11,6 +11,7 @@ import CoinFlip from './CoinFlip';
 import MagicEightBall from './MagicEightBall';
 import ShuffleList from './ShuffleList';
 import CardDraw from './CardDraw';
+import { SoundProvider, SoundToggle } from './SoundContext';
 import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
 
@@ -90,68 +91,71 @@ export default function Random() {
         {pwaMetaTags(basePath, { themeColor: '#1a1a2e', manifestPath: 'random-manifest.json' })}
         <style>{'html,body{background-color:#1a1a2e}'}</style>
       </Head>
-      <Tabs
-        className={styles.tabs}
-        selectedIndex={tabIndex}
-        onSelect={setTabIndex}
-      >
-        <TabList className={styles.tabList}>
-          <Tab
-            className={styles.tab}
-            selectedClassName={styles.tabSelected}
-          >
-            Dice
-          </Tab>
-          <Tab
-            className={styles.tab}
-            selectedClassName={styles.tabSelected}
-          >
-            Choices
-          </Tab>
-          <Tab
-            className={styles.tab}
-            selectedClassName={styles.tabSelected}
-          >
-            Coin
-          </Tab>
-          <Tab
-            className={styles.tab}
-            selectedClassName={styles.tabSelected}
-          >
-            8-Ball
-          </Tab>
-          <Tab
-            className={styles.tab}
-            selectedClassName={styles.tabSelected}
-          >
-            Shuffle
-          </Tab>
-          <Tab
-            className={styles.tab}
-            selectedClassName={styles.tabSelected}
-          >
-            Cards
-          </Tab>
-        </TabList>
-        <TabPanel>
-          <DiceRoll />
-        </TabPanel>
-        <TabPanel>
-          <WeightedChoices />
-        </TabPanel>
-        <TabPanel>
-          <CoinFlip />
-        </TabPanel>
-        <TabPanel>
-          <MagicEightBall />
-        </TabPanel>
-        <TabPanel>
-          <ShuffleList />
-        </TabPanel>
-        <TabPanel>
-          <CardDraw />
-        </TabPanel>
-      </Tabs>
+      <SoundProvider>
+        <SoundToggle />
+        <Tabs
+          className={styles.tabs}
+          selectedIndex={tabIndex}
+          onSelect={setTabIndex}
+        >
+          <TabList className={styles.tabList}>
+            <Tab
+              className={styles.tab}
+              selectedClassName={styles.tabSelected}
+            >
+              Dice
+            </Tab>
+            <Tab
+              className={styles.tab}
+              selectedClassName={styles.tabSelected}
+            >
+              Choices
+            </Tab>
+            <Tab
+              className={styles.tab}
+              selectedClassName={styles.tabSelected}
+            >
+              Coin
+            </Tab>
+            <Tab
+              className={styles.tab}
+              selectedClassName={styles.tabSelected}
+            >
+              8-Ball
+            </Tab>
+            <Tab
+              className={styles.tab}
+              selectedClassName={styles.tabSelected}
+            >
+              Shuffle
+            </Tab>
+            <Tab
+              className={styles.tab}
+              selectedClassName={styles.tabSelected}
+            >
+              Cards
+            </Tab>
+          </TabList>
+          <TabPanel>
+            <DiceRoll />
+          </TabPanel>
+          <TabPanel>
+            <WeightedChoices />
+          </TabPanel>
+          <TabPanel>
+            <CoinFlip />
+          </TabPanel>
+          <TabPanel>
+            <MagicEightBall />
+          </TabPanel>
+          <TabPanel>
+            <ShuffleList />
+          </TabPanel>
+          <TabPanel>
+            <CardDraw />
+          </TabPanel>
+        </Tabs>
+      </SoundProvider>
     </div>
   );
 }

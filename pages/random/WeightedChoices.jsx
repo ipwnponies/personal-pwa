@@ -17,6 +17,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { weightedRandomChoice, generateId, pushHistoryEntry, reorderById } from '../../lib/random';
 import ShareResultButton from './ShareResultButton';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
+import { useSoundCue } from './SoundContext';
 import styles from './index.module.css';
 import wheelStyles from './WeightedChoices.module.css';
 
@@ -294,6 +295,7 @@ function buildWheelSegments(choices) {
 }
 
 export default function WeightedChoices() {
+  const play = useSoundCue();
   const [groups, setGroups] = useState(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -594,6 +596,7 @@ export default function WeightedChoices() {
     if (pool.length === 0) return;
     const chosen = weightedRandomChoice(pool);
     if (!chosen) return;
+    play('pick');
     const poolTotal = pool.reduce((sum, c) => sum + c.weight, 0);
     setResult({
       label: chosen.label,
