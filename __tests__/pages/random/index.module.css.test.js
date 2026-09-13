@@ -36,3 +36,33 @@ describe('random page tablet breakpoints', () => {
     expect(gridIndex).toBeGreaterThan(breakpointIndex);
   });
 });
+
+describe('random page sound toggle placement', () => {
+  // .soundToggle is absolutely positioned relative to the viewport, not to
+  // the centered, narrower .tabs strip, so it can only be kept clear of the
+  // tab list (rather than the specific "Cards" tab, which shifts with
+  // screen width) by never letting the two overlap vertically at all.
+  const readRuleBlock = (selector) => {
+    const start = css.indexOf(`${selector} {`);
+    expect(start).toBeGreaterThan(-1);
+    const end = css.indexOf('}', start);
+    return css.slice(start, end);
+  };
+
+  const readRemProperty = (block, property) => {
+    const match = block.match(new RegExp(`(?:^|\\s)${property}:\\s*([\\d.]+)rem`));
+    expect(match, `expected ${property} (in rem) in: ${block}`).not.toBeNull();
+    return parseFloat(match[1]);
+  };
+
+  it('starts the tab strip below the bottom edge of the sound toggle', () => {
+    const toggleBlock = readRuleBlock('.soundToggle');
+    const toggleTop = readRemProperty(toggleBlock, 'top');
+    const toggleHeight = readRemProperty(toggleBlock, 'height');
+
+    const tabsBlock = readRuleBlock('.tabs');
+    const tabsPaddingTop = readRemProperty(tabsBlock, 'padding-top');
+
+    expect(tabsPaddingTop).toBeGreaterThanOrEqual(toggleTop + toggleHeight);
+  });
+});
