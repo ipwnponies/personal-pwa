@@ -3,6 +3,8 @@ paths:
   - "pages/random/**"
   - "lib/random.js"
   - "lib/random.test.js"
+  - "lib/randomSound.js"
+  - "lib/randomSound.test.js"
   - "lib/useFlickGesture.js"
   - "lib/useFlickGesture.test.js"
   - "lib/useShakeDetection.js"
@@ -23,7 +25,9 @@ Six tools in one page, swipe-navigable tabs.
 - `pages/random/MagicEightBall.jsx` — Magic 8-Ball, fixed 20-answer pool (`EIGHT_BALL_ANSWERS`). SHAKE button and a physical shake (`lib/useShakeDetection.js`) both reveal an answer.
 - `pages/random/ShuffleList.jsx` — paste a list, shuffle its order.
 - `pages/random/CardDraw.jsx` — draw cards from a 52-card deck without replacement. Bulk DRAW button (configurable count) and flicking the deck-face (always draws exactly one, via `lib/useFlickGesture.js`) both trigger a draw.
-- `pages/random/index.module.css` — shared page/tab chrome (`.container`, `.rollButton`, `.result`, `.resultBadge`, `.settingRow`, etc.) used by every tab. Each new tab also has its own sibling `.module.css` for styles that don't overlap the shared ones (`CoinFlip.module.css`, `MagicEightBall.module.css`, `ShuffleList.module.css`, `CardDraw.module.css`, `WeightedChoices.module.css`).
+- `pages/random/index.module.css` — shared page/tab chrome (`.container`, `.rollButton`, `.result`, `.resultBadge`, `.settingRow`, `.soundToggle`, etc.) used by every tab. Each new tab also has its own sibling `.module.css` for styles that don't overlap the shared ones (`CoinFlip.module.css`, `MagicEightBall.module.css`, `ShuffleList.module.css`, `CardDraw.module.css`, `WeightedChoices.module.css`).
+- `pages/random/SoundContext.jsx` — `SoundProvider` (wraps the page in `index.jsx`, holds one `lib/randomSound.js` instance + the persisted mute state), `SoundToggle` (the 🔊/🔇 button, rendered inside the provider since `index.jsx` can't consume its own context), `useSoundCue()` (returns `play`, no-op default outside a provider so every tab still renders standalone in tests).
+- `lib/randomSound.js` — synthesized Web Audio cues (`RANDOM_CUES`, `createRandomSound`) for the six primary actions, same factory shape as `lib/aquarium/sound.js` and `lib/doodleSound.js`. No bundled audio assets, no new dependency; see `docs/superpowers/specs/2026-09-12-random-sound-effects-design.md` for the design rationale.
 - `lib/random.js` — pure helpers: `weightedRandomChoice`, `generateId`, `clamp`, `shuffle`, `buildDeck`, `drawCards`, `reorderById`. `clamp`/`generateId` are also reused by `aquarium` — check before adding near-duplicates elsewhere.
 - `lib/useFlickGesture.js` — one-shot flick detector (fast + far touch), shared by `CoinFlip` and `CardDraw`.
 - `lib/useShakeDetection.js` — physical shake detector via `devicemotion`, used only by `MagicEightBall`. On iOS, `MagicEightBall`'s SHAKE button click handler is also where `DeviceMotionEvent.requestPermission()` gets called (must happen from a direct user gesture) — don't move that call into a `useEffect` or it silently stops working on iOS.
@@ -46,3 +50,4 @@ Six tools in one page, swipe-navigable tabs.
 - `RowPointerSensor` in `pages/random/WeightedChoices.jsx` additionally refuses activation from `input, button` (defence in depth — the weight input owns its own swipe-to-adjust gesture). The selector must not include `[role="button"]`; the handle carries that role. Its `activators` are assigned after the class body, not as a `static` class field — ESLint runs at `ecmaVersion: 12` and an unparseable file silently loses all rule coverage.
 - The drag handle stops `touchmove` propagation so a drag never reaches `useHorizontalSwipe`'s tab-swipe classifier, mirroring `lib/useSwipeNumber.js`. The `restrictToVerticalAxis` modifier only affects dnd-kit's rendered transform and does **not** guard against this on its own.
 - Route is `PWA CacheOnly` (see root AGENTS.md) — this page's route is fully offline-capable, no network dependency in its own logic.
+- Every primary action across all six tabs plays a short synthesized sound cue on success (roll/pick/flip/shake/shuffle/draw), sound on by default, one global mute toggle for the whole page (`localStorage['random-sound-on']`) — no per-tab setting. The cue call sits inside the shared handler after any early-return guard, never on the button's `onClick` directly, so a refused action (too few weighted choices, an empty deck) stays silent and the physical-gesture fallbacks (coin flick, deck flick, ball shake) get the cue for free. When adding a new primary action or a new early-return guard to an existing one, place the `play()` call after the guard, matching the existing six.
