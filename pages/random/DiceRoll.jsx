@@ -1,5 +1,6 @@
-import React, { useReducer, useState } from 'react';
+import React, { useState } from 'react';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
+import { useSoundCue } from './SoundContext';
 import styles from './index.module.css';
 
 const rollDice = (lowerBound, upperBound) =>
@@ -9,21 +10,26 @@ export default function DiceRoll() {
   const [lowerBound, setLowerBound] = useState(1);
   const [upperBound, setUpperBound] = useState(6);
   const [numDice, setNumDice] = useState(1);
-  const [hasRolled, setHasRolled] = useState(false);
-  const [, forceUpdate] = useReducer((x) => x + 1, 0);
+  // The displayed roll lives in state, set only inside handleRoll — never
+  // recomputed from Math.random() in the render body. Recomputing it on
+  // every render would re-roll (and change) the displayed dice on any
+  // unrelated re-render this component receives, e.g. from the shared
+  // SoundContext value changing identity when the mute toggle is clicked.
+  const [randomValues, setRandomValues] = useState([]);
+  const play = useSoundCue();
 
   const lower = useSwipeNumber(lowerBound, setLowerBound, 0, 100);
   const upper = useSwipeNumber(upperBound, setUpperBound, 1, 100);
   const dice = useSwipeNumber(numDice, setNumDice, 1, 20);
 
-  const randomValues = [...Array(numDice).keys()].map(() =>
-    rollDice(lowerBound, upperBound),
-  );
-  const sum = randomValues.reduce((previousValue, i) => previousValue + i);
+  const hasRolled = randomValues.length > 0;
+  const sum = randomValues.reduce((previousValue, i) => previousValue + i, 0);
 
   const handleRoll = () => {
-    setHasRolled(true);
-    forceUpdate();
+    setRandomValues(
+      [...Array(numDice).keys()].map(() => rollDice(lowerBound, upperBound)),
+    );
+    play('roll');
   };
 
   return (
@@ -109,7 +115,7 @@ export default function DiceRoll() {
               </span>
             ))}
           </div>
-          {numDice > 1 && (
+          {randomValues.length > 1 && (
             <div className={styles.resultSum}>
               Sum: <strong>{sum}</strong>
             </div>

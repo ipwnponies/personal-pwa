@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { shuffle } from '../../lib/random';
+import { useSoundCue } from './SoundContext';
 import indexStyles from './index.module.css';
 import styles from './ShuffleList.module.css';
 
@@ -15,6 +16,7 @@ export default function ShuffleList() {
     }
   });
   const [shuffled, setShuffled] = useState(null);
+  const play = useSoundCue();
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, text);
@@ -26,6 +28,7 @@ export default function ShuffleList() {
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
     setShuffled(shuffle(items));
+    play('shuffle');
   };
 
   return (

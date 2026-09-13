@@ -4,12 +4,33 @@
   color: #e0e0e0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow-x: hidden;
+  position: relative;
+}
+
+.soundToggle {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 2;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.4rem;
+  cursor: pointer;
 }
 
 /* Tab styling */
 .tabs {
   max-width: 320px;
   margin: 0 auto;
+  /* Clears .soundToggle (top 0.75rem + height 3rem = 3.75rem) with room to
+   * spare. .soundToggle is absolutely positioned relative to the viewport
+   * width, not to this centered, narrower strip, so on phone widths
+   * (~360-390px) the toggle's fixed right-edge position sits over the
+   * rightmost tab unless the strip starts below it. */
+  padding-top: 4.5rem;
 }
 
 .tabList {
