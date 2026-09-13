@@ -11,6 +11,8 @@ import {
   buildPercentageTable,
   buildRepMaxTable,
 } from '../../lib/epley';
+import { calculatePlatesPerSide } from '../../lib/plateMath';
+import { buildWarmupRamp } from '../../lib/warmup';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
@@ -18,6 +20,21 @@ import styles from './index.module.css';
 
 const STORAGE_KEY = 'fitness-inputs';
 const WEIGHT_SWIPE_STEP = 5;
+// No unit-toggle UI yet; this is the only unit this page currently supports.
+const DEFAULT_UNIT = 'lb';
+// Smallest increment a barbell can actually be loaded to, per unit.
+const LOADABLE_STEP = { lb: 5, kg: 2.5 };
+
+function roundToLoadableStep(weight, unit) {
+  const step = LOADABLE_STEP[unit];
+  return Math.round(weight / step) * step;
+}
+
+function formatWarmupValue(step, unit) {
+  const plateText = step.plates.length > 0 ? `${step.plates.join('+')} per side` : 'bar only';
+  const remainderText = step.remainder ? ` (+${step.remainder} not loadable)` : '';
+  return `${step.percentage}% · ${step.reps} reps · ${step.roundedWeight} ${unit} · ${plateText}${remainderText}`;
+}
 
 function loadStoredInputs() {
   if (typeof window === 'undefined') return null;
@@ -137,6 +154,8 @@ export default function FitnessCalculator() {
   const { basePath } = useRouter();
   const [weight, setWeight] = useState(100);
   const [repetitions, setRepetitions] = useState(5);
+  // No UI toggles this yet; the setter is here for a later unit-toggle control to call.
+  const [unit, setUnit] = useState(DEFAULT_UNIT);
   const [hydrated, setHydrated] = useState(false);
 
   // Read must happen in an effect, not a lazy useState initializer: the server has no
@@ -149,14 +168,15 @@ export default function FitnessCalculator() {
       if (Number.isFinite(stored.repetitions) && stored.repetitions >= REPETITION_MIN) {
         setRepetitions(stored.repetitions);
       }
+      if (stored.unit === 'lb' || stored.unit === 'kg') setUnit(stored.unit);
     }
     setHydrated(true);
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ weight, repetitions }));
-  }, [weight, repetitions, hydrated]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ weight, repetitions, unit }));
+  }, [weight, repetitions, unit, hydrated]);
 
   const weightField = useSwipeNumber(weight, setWeight, 0, Infinity, WEIGHT_SWIPE_STEP);
   const repsField = useSwipeNumber(repetitions, setRepetitions, REPETITION_MIN, Infinity);
@@ -170,12 +190,19 @@ export default function FitnessCalculator() {
     const repMaxes = buildRepMaxTable(estimatedOneRm);
     const percentageBreakdown = buildPercentageTable(estimatedOneRm);
 
+    const warmupSteps = buildWarmupRamp(weight).map((step, index) => {
+      const roundedWeight = roundToLoadableStep(step.weight, unit);
+      const { plates, remainder } = calculatePlatesPerSide(roundedWeight, unit);
+      return { ...step, order: index + 1, roundedWeight, plates, remainder };
+    });
+
     return {
       estimatedOneRm,
       repMaxes,
       percentageBreakdown,
+      warmupSteps,
     };
-  }, [repetitions, weight]);
+  }, [repetitions, weight, unit]);
 
   const estimatedOneRmDisplay = calculation.error ? '--' : formatWeight(calculation.estimatedOneRm);
   const repetitionDisplay = `${repetitions} rep${repetitions === 1 ? '' : 's'}`;
@@ -238,6 +265,16 @@ export default function FitnessCalculator() {
                 rowLabel={(entry) => `${entry.percentage}%`}
                 rowValue={(entry) => formatWeight(entry.weight)}
                 highlightedKey={highlightedPercent}
+              />
+
+              <ResultTable
+                title="Warmup Ramp"
+                subtitle="Warmup sets building up to the working weight, with plates per side."
+                columnLabels={['Warmup Set', 'Load']}
+                rows={calculation.warmupSteps}
+                rowKey={(step) => step.order}
+                rowLabel={(step) => `Warmup ${step.order}`}
+                rowValue={(step) => formatWarmupValue(step, unit)}
               />
             </div>
           </section>

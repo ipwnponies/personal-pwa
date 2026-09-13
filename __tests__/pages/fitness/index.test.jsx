@@ -250,6 +250,16 @@ describe('FitnessCalculator', () => {
     expect(percentageRow.className).not.toMatch(/rowHighlighted/);
   });
 
+  it('renders the warmup ramp with rounded weights and plate breakdowns for the default working weight', () => {
+    render(<FitnessCalculator />);
+    expect(screen.getByRole('heading', { name: 'Warmup Ramp' })).toBeInTheDocument();
+    expect(screen.getByText('Warmup 1')).toBeInTheDocument();
+    expect(screen.getByText('40% · 5 reps · 40 lb · bar only')).toBeInTheDocument();
+    expect(screen.getByText('55% · 5 reps · 55 lb · 5 per side')).toBeInTheDocument();
+    expect(screen.getByText('70% · 3 reps · 70 lb · 10+2.5 per side')).toBeInTheDocument();
+    expect(screen.getByText('85% · 2 reps · 85 lb · 10+10 per side')).toBeInTheDocument();
+  });
+
   it('sets html and body background to white on mount', () => {
     const probe = document.createElement('div');
     probe.style.backgroundColor = '#ffffff';
