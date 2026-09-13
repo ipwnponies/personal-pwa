@@ -5,10 +5,12 @@ import PropTypes from 'prop-types';
 
 import styles from './index.module.css';
 import { pwaMetaTags } from '../../components/layout';
+import SpeciesChooser from '../../components/tamagotchi/SpeciesChooser';
 import { getPetType, spriteMood, getSprite } from '../../lib/tamagotchi/creatures';
-import { loadPet, savePet } from '../../lib/tamagotchi/storage';
+import { loadPet, savePet, clearPet } from '../../lib/tamagotchi/storage';
 import {
   applyElapsed,
+  createDefaultPet,
   feedPet,
   playWithPet,
   toggleSleep,
@@ -29,6 +31,7 @@ import {
 } from '../../lib/tamagotchi/minigame';
 
 const TICK_MS = 2000;
+const RESTART_CONFIRM_MS = 5000;
 
 function NeedBar({ label, value }) {
   return (
@@ -115,14 +118,24 @@ MinigameOverlay.propTypes = {
 export default function Tamagotchi() {
   const { basePath } = useRouter();
   const [pet, setPet] = useState(null);
+  // 'loading' until the save is read, then 'choosing' (no pet yet) or 'playing'.
+  // pet === null alone can't tell those apart.
+  const [status, setStatus] = useState('loading');
   const soundRef = useRef(null);
 
   // Mount: load, catch up offline decay, wire sound.
   useEffect(() => {
     const now = Date.now();
-    const loaded = loadPet(now);
+    const loaded = loadPet();
+    if (!loaded) {
+      // No sound engine yet: handleChooseSpecies builds one for the pet it
+      // hatches, so there is nothing to wire until a species is picked.
+      setStatus('choosing');
+      return;
+    }
     const caughtUp = applyElapsed(loaded, now - loaded.lastSeen, now);
     setPet(caughtUp);
+    setStatus('playing');
     soundRef.current = createSound(caughtUp.soundOn);
   }, []);
 
@@ -142,6 +155,28 @@ export default function Tamagotchi() {
     // to start once the pet first loads.
   }, [pet !== null]);
 
+  const [confirmRestart, setConfirmRestart] = useState(false);
+
+  // Disarms itself. The 2s tick does not go through commit, so without this
+  // a confirm the player walked away from stays armed indefinitely.
+  useEffect(() => {
+    if (!confirmRestart) return undefined;
+    const id = setTimeout(() => setConfirmRestart(false), RESTART_CONFIRM_MS);
+    return () => clearTimeout(id);
+  }, [confirmRestart]);
+
+  // The 2s background tick can also flip whether Medicine is rendered (a
+  // poop pile spawning re-sickens/hides it independently of any tap), which
+  // shifts every button after it in the palette. If that happens while
+  // restart is armed, Confirm can slide onto the exact spot the arming tap
+  // sat on — defeating the positional guarantee the double-tap safety
+  // depends on (see the comment by the confirmRestart buttons below). So
+  // disarm whenever Medicine's visibility changes, not just on a timeout.
+  const medicineVisible = pet ? pet.sick && !pet.hasPoop : false;
+  useEffect(() => {
+    setConfirmRestart(false);
+  }, [medicineVisible]);
+
   const prevStageRef = useRef(null);
 
   // Plays the existing 'evolve' cue the moment the pet reaches adulthood.
@@ -156,6 +191,7 @@ export default function Tamagotchi() {
   }, [pet]);
 
   const commit = useCallback((updater, cue) => {
+    setConfirmRestart(false);
     setPet((prev) => {
       if (!prev) return prev;
       const next = updater(prev);
@@ -165,7 +201,10 @@ export default function Tamagotchi() {
   }, []);
 
   const [minigameActive, setMinigameActive] = useState(false);
-  const handleOpenMinigame = () => setMinigameActive(true);
+  const handleOpenMinigame = () => {
+    setConfirmRestart(false);
+    setMinigameActive(true);
+  };
   const handleMinigameComplete = useCallback(
     (results) => {
       setMinigameActive(false);
@@ -175,11 +214,30 @@ export default function Tamagotchi() {
   );
   const handleMinigameCancel = useCallback(() => setMinigameActive(false), []);
 
+  const handleChooseSpecies = (key) => {
+    const now = Date.now();
+    const hatched = savePet(createDefaultPet(now, key), now);
+    setPet(hatched);
+    setStatus('playing');
+    // Build a fresh engine rather than reuse soundRef. After a restart it
+    // still carries the previous pet's setEnabled(false), which would leave
+    // the new pet silent while the UI reports Sound on.
+    soundRef.current = createSound(hatched.soundOn);
+    soundRef.current.play('evolve');
+  };
+
   const handleFeed = () => commit((prev) => feedPet(prev), 'nom');
   const handlePlay = () => commit((prev) => playWithPet(prev, PET_TAP_AMOUNT), 'play');
   const handleClean = () => commit((prev) => cleanPoop(prev), 'clean');
   const handleSleepToggle = () => commit((prev) => toggleSleep(prev), 'sleep');
   const handleMedicine = () => commit((prev) => giveMedicine(prev), 'medicine');
+  const handleRestart = () => {
+    clearPet();
+    setPet(null);
+    setConfirmRestart(false);
+    setMinigameActive(false);
+    setStatus('choosing');
+  };
   const toggleSound = () =>
     commit((prev) => {
       const soundOn = !prev.soundOn;
@@ -187,10 +245,11 @@ export default function Tamagotchi() {
       return { ...prev, soundOn };
     }, null);
 
-  if (!pet) {
+  if (status === 'loading' || !pet) {
     return (
       <div className={styles.page}>
         <Head>{pwaMetaTags(basePath)}</Head>
+        {status === 'choosing' && <SpeciesChooser onChoose={handleChooseSpecies} />}
       </div>
     );
   }
@@ -270,6 +329,38 @@ export default function Tamagotchi() {
         {pet.sick && !pet.hasPoop && (
           <button type="button" className={styles.action} aria-label="Medicine" onClick={handleMedicine}>
             💊
+          </button>
+        )}
+        {confirmRestart ? (
+          <>
+            {/* The arming tap's own position becomes Cancel, so a second tap
+                in the same place is harmless. The destructive target only
+                appears in a palette slot that was empty a moment earlier. */}
+            <button
+              type="button"
+              className={styles.action}
+              aria-label="Cancel new pet"
+              onClick={() => setConfirmRestart(false)}
+            >
+              ✖️
+            </button>
+            <button
+              type="button"
+              className={styles.actionDanger}
+              aria-label="Confirm new pet"
+              onClick={handleRestart}
+            >
+              ❗
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className={styles.action}
+            aria-label="New pet"
+            onClick={() => setConfirmRestart(true)}
+          >
+            🔄
           </button>
         )}
       </div>
