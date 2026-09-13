@@ -1,0 +1,30 @@
+.shareRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.shareButton {
+  padding: 8px 20px;
+  border: 1px solid #3a3a4d;
+  border-radius: 10px;
+  background: #2a2a3d;
+  color: #4fc3f7;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.shareButton:active {
+  background: #33334a;
+  transform: scale(0.98);
+}
+
+.shareStatus {
+  min-height: 1rem;
+  font-size: 0.8rem;
+  color: #999;
+}
