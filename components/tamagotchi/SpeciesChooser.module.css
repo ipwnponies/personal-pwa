@@ -1,0 +1,50 @@
+.chooser {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2rem 1rem;
+}
+
+.prompt {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #eee;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 5.5rem;
+  padding: 1rem;
+  border: 2px solid currentColor;
+  border-radius: 0.75rem;
+  background: none;
+  /* Explicit, not inherit: the framework declares color directly on
+     button elements, and a direct declaration can beat an inherited value
+     depending on stylesheet order. This page never opts into a dark theme
+     (see pages/tamagotchi/index.module.css), so without this the button
+     text renders in the framework's default dark gray on this page's dark
+     background — illegible. currentColor below then correctly resolves to
+     this explicit value. */
+  color: #eee;
+  cursor: pointer;
+}
+
+.choiceSprite {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.choiceName {
+  font-size: 0.9rem;
+}
