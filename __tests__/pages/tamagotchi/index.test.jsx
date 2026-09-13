@@ -62,11 +62,42 @@ describe('Tamagotchi page', () => {
   });
 
   it('renders the pet and care actions', () => {
+    seedPet();
     render(<Tamagotchi />);
     expect(screen.getByTestId('pet')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Feed' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sleep' })).toBeInTheDocument();
+  });
+
+  it('shows the species chooser when there is no saved pet', () => {
+    render(<Tamagotchi />);
+    expect(screen.getByRole('button', { name: 'Blob' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sprout' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ember' })).toBeInTheDocument();
+    expect(screen.queryByTestId('pet')).not.toBeInTheDocument();
+  });
+
+  it('hatches the chosen species and persists it', () => {
+    render(<Tamagotchi />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ember' }));
+    expect(readPet().petType).toBe('ember');
+    expect(readPet().stage).toBe('baby');
+    expect(screen.getByTestId('pet')).toBeInTheDocument();
+    expect(screen.getByTestId('pet')).toHaveTextContent('🕯️');
+  });
+
+  it('plays the evolve cue as the hatch sound', () => {
+    render(<Tamagotchi />);
+    fireEvent.click(screen.getByRole('button', { name: 'Sprout' }));
+    expect(latestPlaySpy()).toHaveBeenCalledWith('evolve');
+  });
+
+  it('skips the chooser when a saved pet exists', () => {
+    seedPet({ petType: 'sprout' });
+    render(<Tamagotchi />);
+    expect(screen.queryByRole('button', { name: 'Ember' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('pet')).toHaveTextContent('🌰');
   });
 
   it('feeding raises hunger and persists it, playing a cue', () => {
@@ -85,6 +116,7 @@ describe('Tamagotchi page', () => {
   });
 
   it('opens the minigame overlay from the palette Play button', () => {
+    seedPet();
     render(<Tamagotchi />);
     fireEvent.click(screen.getByRole('button', { name: 'Play' }));
     expect(screen.getByTestId('minigame-overlay')).toBeInTheDocument();

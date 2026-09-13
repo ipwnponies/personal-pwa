@@ -5,10 +5,12 @@ import PropTypes from 'prop-types';
 
 import styles from './index.module.css';
 import { pwaMetaTags } from '../../components/layout';
+import SpeciesChooser from '../../components/tamagotchi/SpeciesChooser';
 import { getPetType, spriteMood, getSprite } from '../../lib/tamagotchi/creatures';
 import { loadPet, savePet } from '../../lib/tamagotchi/storage';
 import {
   applyElapsed,
+  createDefaultPet,
   feedPet,
   playWithPet,
   toggleSleep,
@@ -115,14 +117,24 @@ MinigameOverlay.propTypes = {
 export default function Tamagotchi() {
   const { basePath } = useRouter();
   const [pet, setPet] = useState(null);
+  // 'loading' until the save is read, then 'choosing' (no pet yet) or 'playing'.
+  // pet === null alone can't tell those apart.
+  const [status, setStatus] = useState('loading');
   const soundRef = useRef(null);
 
   // Mount: load, catch up offline decay, wire sound.
   useEffect(() => {
     const now = Date.now();
-    const loaded = loadPet(now);
+    const loaded = loadPet();
+    if (!loaded) {
+      // No sound engine yet: handleChooseSpecies builds one for the pet it
+      // hatches, so there is nothing to wire until a species is picked.
+      setStatus('choosing');
+      return;
+    }
     const caughtUp = applyElapsed(loaded, now - loaded.lastSeen, now);
     setPet(caughtUp);
+    setStatus('playing');
     soundRef.current = createSound(caughtUp.soundOn);
   }, []);
 
@@ -175,6 +187,18 @@ export default function Tamagotchi() {
   );
   const handleMinigameCancel = useCallback(() => setMinigameActive(false), []);
 
+  const handleChooseSpecies = (key) => {
+    const now = Date.now();
+    const hatched = savePet(createDefaultPet(now, key), now);
+    setPet(hatched);
+    setStatus('playing');
+    // Build a fresh engine rather than reuse soundRef. After a restart it
+    // still carries the previous pet's setEnabled(false), which would leave
+    // the new pet silent while the UI reports Sound on.
+    soundRef.current = createSound(hatched.soundOn);
+    soundRef.current.play('evolve');
+  };
+
   const handleFeed = () => commit((prev) => feedPet(prev), 'nom');
   const handlePlay = () => commit((prev) => playWithPet(prev, PET_TAP_AMOUNT), 'play');
   const handleClean = () => commit((prev) => cleanPoop(prev), 'clean');
@@ -187,10 +211,11 @@ export default function Tamagotchi() {
       return { ...prev, soundOn };
     }, null);
 
-  if (!pet) {
+  if (status === 'loading' || !pet) {
     return (
       <div className={styles.page}>
         <Head>{pwaMetaTags(basePath)}</Head>
+        {status === 'choosing' && <SpeciesChooser onChoose={handleChooseSpecies} />}
       </div>
     );
   }
