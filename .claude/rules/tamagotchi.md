@@ -7,11 +7,10 @@ scope: tamagotchi
 
 # Tamagotchi
 
-Virtual pet. Scaffold stage — single stationary pet, needs decay over time,
-tap-driven care actions. Mechanics (species variety, evolution branches,
-minigames, discipline/sickness, death) are deliberately unbuilt pending
-brainstorming; this is the tech skeleton, cloned from `lib/aquarium`'s
-pattern, not the final design.
+Virtual pet. Needs decay over time, tap-driven care actions, branching
+evolution, a recoverable sickness state, a timing minigame, and three species
+the player picks from when a pet is created. No death and no permanent stat
+loss anywhere — that is a standing design constraint, not an omission.
 
 ## Layout
 
@@ -23,7 +22,8 @@ pattern, not the final design.
   (`MET_THRESHOLD`, `NEED_FLOOR`, `NEED_MAX`) the page derives thresholds
   from — don't hardcode duplicate thresholds in the page.
 - `lib/tamagotchi/creatures.js` — pet type definitions (sprite per
-  stage/mood). Currently a single `blob` placeholder.
+  stage/mood). Three species (`blob`, `sprout`, `ember`), each declaring its own adult
+  `forms` map and `defaultForm`.
 - `lib/tamagotchi/storage.js` — localStorage load/save of pet state,
   including offline catch-up (`applyElapsed` covers elapsed time since last
   visit).
@@ -45,3 +45,13 @@ pattern, not the final design.
   `wellMetSince`. Mirrors the aquarium's growth streak.
 - New need/threshold logic should derive from the constants simulation.js
   exports rather than introducing new magic numbers.
+- Evolution has two halves that must stay apart. `careVerdict` in
+  `simulation.js` classifies the care tally into a species-independent verdict
+  (`balanced`/`fedHeavy`/`playHeavy`/`sleepHeavy`/`efficient`); `resolveForm`
+  in `creatures.js` maps that verdict onto the species' own form key, which is
+  what `pet.adultForm` stores. Keep tally math in `simulation.js` and branch
+  naming in `creatures.js` — a species must never need a code change in
+  `simulation.js`.
+- `loadPet` returns `null` when there is no usable save. The page treats that
+  as "show the species chooser", so any new caller must handle null rather
+  than assume a pet.
