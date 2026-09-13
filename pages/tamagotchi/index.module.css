@@ -86,7 +86,17 @@
 
 .palette {
   display: flex;
-  justify-content: space-around;
+  flex-wrap: wrap;
+  /* flex-start, not space-around: when the row overflows and wraps, an
+     item's horizontal position must depend only on the items before it on
+     its line, never on how many items end up sharing the line after it.
+     space-around/center redistribute per-line based on total line content,
+     so armed Cancel+Confirm sharing a line would shift Cancel away from
+     wherever the lone "New pet" button sat a moment before — exactly the
+     positional guarantee the restart control depends on (see the comment
+     by the confirmRestart buttons in index.jsx). flex-start keeps every
+     button's start position stable regardless of what wraps in after it. */
+  justify-content: flex-start;
   gap: 0.75rem;
   padding: 1rem 0.75rem 1.5rem;
 }
@@ -100,6 +110,12 @@
   background: rgba(255, 255, 255, 0.12);
   font-size: 2rem;
   cursor: pointer;
+}
+
+.actionDanger {
+  composes: action;
+  outline: 2px solid crimson;
+  outline-offset: 2px;
 }
 
 .minigameOverlay {
