@@ -21,6 +21,7 @@ import wheelStyles from './WeightedChoices.module.css';
 
 const HISTORY_STORAGE_KEY = 'random-choices-history';
 const MAX_HISTORY_ENTRIES = 20;
+const DRAWN_STORAGE_KEY = 'random-choices-drawn';
 
 const DRAG_ACTIVATION_CONSTRAINT = { delay: 200, tolerance: 8 };
 
@@ -95,8 +96,18 @@ function DragHandle({ handleRef, label, attributes, listeners }) {
   );
 }
 
-// eslint-disable-next-line react/prop-types
-function ChoiceRow({ id, label, weightValue, totalWeight, onChangeLabel, onChangeWeight, onDelete }) {
+/* eslint-disable react/prop-types */
+function ChoiceRow({
+  id,
+  label,
+  weightValue,
+  totalWeight,
+  isDrawn,
+  onChangeLabel,
+  onChangeWeight,
+  onDelete,
+}) {
+  /* eslint-enable react/prop-types */
   const setWeight = useCallback(
     (valOrFn) => {
       const next = typeof valOrFn === 'function' ? valOrFn(weightValue) : valOrFn;
@@ -122,7 +133,9 @@ function ChoiceRow({ id, label, weightValue, totalWeight, onChangeLabel, onChang
     <div
       ref={setNodeRef}
       style={sortableDragStyle(transform, transition)}
-      className={`${styles.choiceRow} ${isDragging ? styles.dragging : ''}`}
+      className={`${styles.choiceRow} ${isDragging ? styles.dragging : ''} ${
+        isDrawn ? wheelStyles.choiceDrawn : ''
+      }`}
     >
       <DragHandle
         handleRef={setActivatorNodeRef}
@@ -154,7 +167,7 @@ function ChoiceRow({ id, label, weightValue, totalWeight, onChangeLabel, onChang
         onTouchMove={weight.onTouchMove}
         onTouchEnd={weight.onTouchEnd}
       />
-      <span className={styles.choicePercent}>{percent}%</span>
+      <span className={styles.choicePercent}>{isDrawn ? '—' : `${percent}%`}</span>
       <button type="button" className={styles.choiceDelete} onClick={onDelete}>
         &times;
       </button>
@@ -310,6 +323,14 @@ export default function WeightedChoices() {
 
   const [result, setResult] = useState(null);
   const [wheelRotation, setWheelRotation] = useState(0);
+  // The wheel's CSS transform animates for 3s (see .wheel's transition), but
+  // the gradient it's animating toward is a plain style prop that would
+  // otherwise flip instantly once a raffle pick shrinks the pool — landing
+  // the pointer on a wedge boundary that no longer matches what it was
+  // spun toward. Freezing the pre-pick segments for the spin's duration
+  // keeps the wheel "never lying about the pick" (see rules doc) true
+  // through the animation, not just at rest.
+  const [spinSegments, setSpinSegments] = useState(null);
   const [undoToast, setUndoToast] = useState(null);
   const undoTimerRef = useRef(null);
 
@@ -317,6 +338,21 @@ export default function WeightedChoices() {
     if (typeof window === 'undefined') return {};
     try {
       const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // No-replacement ("raffle") mode: `noReplacement` lives on the group
+  // object (persisted in `random-choices`); the ids it has drawn so far
+  // are runtime pool state, kept in their own storage key mirroring how
+  // `history` is stored, so a group's config and its in-progress pool
+  // stay independent.
+  const [drawnIds, setDrawnIds] = useState(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const saved = localStorage.getItem(DRAWN_STORAGE_KEY);
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -346,10 +382,26 @@ export default function WeightedChoices() {
     localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
   }, [history]);
 
+  useEffect(() => {
+    localStorage.setItem(DRAWN_STORAGE_KEY, JSON.stringify(drawnIds));
+  }, [drawnIds]);
+
   const expandedGroup = groups.find((g) => g.id === expandedGroupId);
   const expandedChoices = expandedGroup?.choices || [];
-  const totalWeight = expandedChoices.reduce((sum, c) => sum + c.weight, 0);
-  const canPick = expandedChoices.filter((c) => c.label.trim()).length >= 2;
+  const expandedDrawnIds = drawnIds[expandedGroupId] || [];
+  const drawnSet = new Set(expandedDrawnIds);
+  // The pool that's actually left to pick from: all choices when
+  // replacement is allowed, or the not-yet-drawn ones in raffle mode.
+  const remainingChoices = expandedGroup?.noReplacement
+    ? expandedChoices.filter((c) => !drawnSet.has(c.id))
+    : expandedChoices;
+  const totalWeight = remainingChoices.reduce((sum, c) => sum + c.weight, 0);
+  const validChoices = expandedChoices.filter((c) => c.label.trim());
+  const remainingValidChoices = expandedGroup?.noReplacement
+    ? validChoices.filter((c) => !drawnSet.has(c.id))
+    : validChoices;
+  const canPick =
+    validChoices.length >= 2 && remainingValidChoices.some((c) => c.weight > 0);
   const expandedHistory = history[expandedGroupId] || [];
 
   const [ghostKeyChoice, setGhostKeyChoice] = useState(0);
@@ -430,6 +482,7 @@ export default function WeightedChoices() {
       const index = groups.findIndex((g) => g.id === groupId);
       const deletedGroup = groups[index];
       const deletedGroupHistory = history[groupId];
+      const deletedGroupDrawn = drawnIds[groupId];
       const wasExpanded = expandedGroupId === groupId;
       const remaining = groups.filter((g) => g.id !== groupId);
       const newGroup = remaining.length === 0 ? { id: generateId(), name: 'Default', choices: [] } : null;
@@ -440,6 +493,11 @@ export default function WeightedChoices() {
       });
 
       setHistory((prev) => {
+        const { [groupId]: _removed, ...rest } = prev;
+        return rest;
+      });
+
+      setDrawnIds((prev) => {
         const { [groupId]: _removed, ...rest } = prev;
         return rest;
       });
@@ -463,6 +521,9 @@ export default function WeightedChoices() {
         if (deletedGroupHistory) {
           setHistory((prev) => ({ ...prev, [deletedGroup.id]: deletedGroupHistory }));
         }
+        if (deletedGroupDrawn) {
+          setDrawnIds((prev) => ({ ...prev, [deletedGroup.id]: deletedGroupDrawn }));
+        }
         // Only the deleted group's own view was disturbed; leave an unrelated
         // expanded group (and its pick result) alone.
         if (newGroup || wasExpanded) {
@@ -471,12 +532,39 @@ export default function WeightedChoices() {
         }
       });
     },
-    [groups, history, expandedGroupId, showUndoToast],
+    [groups, history, drawnIds, expandedGroupId, showUndoToast],
   );
+
+  const handleToggleNoReplacement = useCallback(
+    (groupId) => {
+      const group = groups.find((g) => g.id === groupId);
+      const turningOff = !!group?.noReplacement;
+      setGroups((prev) =>
+        prev.map((g) => (g.id === groupId ? { ...g, noReplacement: !g.noReplacement } : g)),
+      );
+      // Toggling off gives up the raffle's progress rather than silently
+      // keeping a hidden exclusion set around for if it's turned on again.
+      if (turningOff) {
+        setDrawnIds((prev) => {
+          const { [groupId]: _removed, ...rest } = prev;
+          return rest;
+        });
+      }
+    },
+    [groups],
+  );
+
+  const handleResetPool = useCallback((groupId) => {
+    setDrawnIds((prev) => {
+      const { [groupId]: _removed, ...rest } = prev;
+      return rest;
+    });
+  }, []);
 
   const handleToggleGroup = (groupId) => {
     setExpandedGroupId(groupId);
     setResult(null);
+    setSpinSegments(null);
   };
 
   const sensors = useSensors(
@@ -501,12 +589,14 @@ export default function WeightedChoices() {
   const handlePick = () => {
     const valid = expandedChoices.filter((c) => c.label.trim());
     if (valid.length < 2) return;
-    const chosen = weightedRandomChoice(valid);
+    const pool = expandedGroup?.noReplacement ? valid.filter((c) => !drawnSet.has(c.id)) : valid;
+    if (pool.length === 0) return;
+    const chosen = weightedRandomChoice(pool);
     if (!chosen) return;
-    const validTotal = valid.reduce((sum, c) => sum + c.weight, 0);
+    const poolTotal = pool.reduce((sum, c) => sum + c.weight, 0);
     setResult({
       label: chosen.label,
-      percent: Math.round((chosen.weight / validTotal) * 100),
+      percent: Math.round((chosen.weight / poolTotal) * 100),
     });
 
     setHistory((prev) => ({
@@ -518,16 +608,24 @@ export default function WeightedChoices() {
       ),
     }));
 
-    const segments = buildWheelSegments(valid);
+    if (expandedGroup?.noReplacement) {
+      setDrawnIds((prev) => ({
+        ...prev,
+        [expandedGroupId]: [...(prev[expandedGroupId] || []), chosen.id],
+      }));
+    }
+
+    const segments = buildWheelSegments(pool);
     const chosenSegment = segments.find((s) => s.id === chosen.id);
     const center = (chosenSegment.start + chosenSegment.end) / 2;
+    setSpinSegments(segments);
     setWheelRotation((prev) => prev - (prev % 360) + 5 * 360 - center);
   };
 
   return (
     <div className={styles.container}>
       {(() => {
-        const wheelSegments = buildWheelSegments(expandedChoices.filter((c) => c.label.trim()));
+        const wheelSegments = spinSegments || buildWheelSegments(remainingValidChoices);
         const gradient =
           wheelSegments.length > 0
             ? wheelSegments.map((s) => `${s.color} ${s.start}deg ${s.end}deg`).join(', ')
@@ -539,6 +637,7 @@ export default function WeightedChoices() {
               data-testid="choiceWheel"
               className={wheelStyles.wheel}
               style={{ background: `conic-gradient(${gradient})`, transform: `rotate(${wheelRotation}deg)` }}
+              onTransitionEnd={() => setSpinSegments(null)}
             />
           </div>
         );
@@ -565,6 +664,28 @@ export default function WeightedChoices() {
                   />
                   {isExpanded && (
                     <div className={styles.choicesList}>
+                      <label
+                        className={styles.settingRow}
+                        htmlFor={`no-replacement-${group.id}`}
+                      >
+                        <span className={styles.settingLabel}>No repeats</span>
+                        <input
+                          id={`no-replacement-${group.id}`}
+                          type="checkbox"
+                          checked={!!group.noReplacement}
+                          onChange={() => handleToggleNoReplacement(group.id)}
+                        />
+                      </label>
+                      {group.noReplacement && (
+                        <button
+                          type="button"
+                          className={wheelStyles.resetPoolButton}
+                          onClick={() => handleResetPool(group.id)}
+                          disabled={(drawnIds[group.id] || []).length === 0}
+                        >
+                          Reset pool
+                        </button>
+                      )}
                       <SortableContext
                         items={group.choices.map((c) => c.id)}
                         strategy={verticalListSortingStrategy}
@@ -576,6 +697,7 @@ export default function WeightedChoices() {
                             label={choice.label}
                             weightValue={choice.weight}
                             totalWeight={totalWeight}
+                            isDrawn={!!group.noReplacement && drawnSet.has(choice.id)}
                             onChangeLabel={(l) => handleChangeLabel(group.id, choice.id, l)}
                             onChangeWeight={(w) => handleChangeWeight(group.id, choice.id, w)}
                             onDelete={() => handleDeleteChoice(group.id, choice.id)}

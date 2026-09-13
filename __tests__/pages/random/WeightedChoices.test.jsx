@@ -648,6 +648,437 @@ describe('WeightedChoices grouped structure', () => {
     });
   });
 
+  describe('No-replacement mode', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('shows a No repeats toggle per group and persists it to random-choices', async () => {
+      const groupsData = [
+        { id: 'g1', name: 'Test Group', choices: [{ id: 'c1', label: 'Choice 1', weight: 1 }] },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+
+      const toggle = screen.getByLabelText('No repeats');
+      expect(toggle).not.toBeChecked();
+
+      fireEvent.click(toggle);
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        expect(saved[0].noReplacement).toBe(true);
+      });
+      expect(toggle).toBeChecked();
+    });
+
+    it('excludes a picked choice from subsequent picks when No repeats is on', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByLabelText('No repeats'));
+
+      const pickButton = screen.getByRole('button', { name: /PICK/i });
+      fireEvent.click(pickButton);
+      await waitFor(() => {
+        expect(screen.getAllByText('First').length).toBeGreaterThan(0);
+      });
+
+      // Only "Second" remains in the pool, so it's chosen regardless of the
+      // (still low, First-favoring) rng value.
+      fireEvent.click(pickButton);
+      await waitFor(() => {
+        expect(screen.getAllByText('Second').length).toBeGreaterThan(0);
+      });
+    });
+
+    it('persists drawn ids under random-choices-drawn keyed by group', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByLabelText('No repeats'));
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+
+      await waitFor(() => {
+        const drawn = JSON.parse(localStorage.getItem('random-choices-drawn'));
+        expect(drawn.g1).toEqual(['c1']);
+      });
+    });
+
+    it('disables PICK once the pool is exhausted, and Reset re-enables it', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByLabelText('No repeats'));
+
+      const pickButton = screen.getByRole('button', { name: /PICK/i });
+      fireEvent.click(pickButton);
+      await waitFor(() => expect(screen.getAllByText('First').length).toBeGreaterThan(0));
+      fireEvent.click(pickButton);
+      await waitFor(() => expect(screen.getAllByText('Second').length).toBeGreaterThan(0));
+
+      await waitFor(() => expect(pickButton).toBeDisabled());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reset pool' }));
+
+      await waitFor(() => expect(pickButton).not.toBeDisabled());
+    });
+
+    it('Reset pool clears drawn ids for that group only', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Group A',
+          choices: [
+            { id: 'c1', label: 'A1', weight: 1 },
+            { id: 'c2', label: 'A2', weight: 1 },
+          ],
+        },
+        {
+          id: 'g2',
+          name: 'Group B',
+          choices: [
+            { id: 'c3', label: 'B1', weight: 1 },
+            { id: 'c4', label: 'B2', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      localStorage.setItem(
+        'random-choices-drawn',
+        JSON.stringify({ g1: ['c1'], g2: ['c3'] }),
+      );
+
+      render(<WeightedChoices />);
+
+      // Expand Group A and turn on No repeats so its Reset button renders.
+      fireEvent.click(screen.getByLabelText('No repeats'));
+      fireEvent.click(screen.getByRole('button', { name: 'Reset pool' }));
+
+      await waitFor(() => {
+        const drawn = JSON.parse(localStorage.getItem('random-choices-drawn'));
+        expect(drawn.g1).toBeUndefined();
+        expect(drawn.g2).toEqual(['c3']);
+      });
+    });
+
+    it('toggling No repeats off clears that group\'s drawn ids', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          noReplacement: true,
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      localStorage.setItem('random-choices-drawn', JSON.stringify({ g1: ['c1'] }));
+
+      render(<WeightedChoices />);
+
+      const toggle = screen.getByLabelText('No repeats');
+      expect(toggle).toBeChecked();
+      fireEvent.click(toggle);
+
+      await waitFor(() => {
+        const drawn = JSON.parse(localStorage.getItem('random-choices-drawn'));
+        expect(drawn.g1).toBeUndefined();
+      });
+
+      const pickButton = screen.getByRole('button', { name: /PICK/i });
+      expect(pickButton).not.toBeDisabled();
+    });
+
+    it('leaves repeat picks possible when No repeats is off', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      const pickButton = screen.getByRole('button', { name: /PICK/i });
+
+      fireEvent.click(pickButton);
+      await waitFor(() => expect(screen.getAllByText('First').length).toBeGreaterThan(0));
+      fireEvent.click(pickButton);
+      await waitFor(() => expect(screen.getAllByText('First').length).toBeGreaterThan(0));
+      expect(pickButton).not.toBeDisabled();
+    });
+
+    it('does not wedge the pool when a drawn choice is deleted', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+            { id: 'c3', label: 'Third', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByLabelText('No repeats'));
+
+      const pickButton = screen.getByRole('button', { name: /PICK/i });
+      fireEvent.click(pickButton);
+      await waitFor(() => expect(screen.getAllByText('First').length).toBeGreaterThan(0));
+
+      // Delete the now-drawn "First" row via its own delete button.
+      const firstRow = screen.getByDisplayValue('First').closest('div');
+      fireEvent.click(firstRow.querySelector('button'));
+
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem('random-choices'));
+        expect(saved[0].choices.map((c) => c.label)).toEqual(['Second', 'Third']);
+      });
+
+      expect(pickButton).not.toBeDisabled();
+
+      fireEvent.click(pickButton);
+      await waitFor(() => {
+        expect(screen.getAllByText(/Second|Third/).length).toBeGreaterThan(0);
+      });
+    });
+
+    it('carries drawn state through group delete and Undo', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Only Group',
+          noReplacement: true,
+          choices: [
+            { id: 'c1', label: 'Choice 1', weight: 1 },
+            { id: 'c2', label: 'Choice 2', weight: 1 },
+          ],
+        },
+        { id: 'g2', name: 'Other Group', choices: [{ id: 'c3', label: 'X', weight: 1 }] },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      localStorage.setItem('random-choices-drawn', JSON.stringify({ g1: ['c1'] }));
+
+      render(<WeightedChoices />);
+
+      fireEvent.click(screen.getAllByLabelText('Delete group')[0]);
+      expect(screen.getByText('Group deleted')).toBeInTheDocument();
+
+      await waitFor(() => {
+        const drawn = JSON.parse(localStorage.getItem('random-choices-drawn'));
+        expect(drawn.g1).toBeUndefined();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+
+      await waitFor(() => {
+        const drawn = JSON.parse(localStorage.getItem('random-choices-drawn'));
+        expect(drawn.g1).toEqual(['c1']);
+      });
+    });
+
+    it('keeps the wheel showing the pre-pick pool until the spin transition ends', async () => {
+      // Three choices (not two): the assertions below distinguish the
+      // pre-pick (3-segment) and post-pick (2-segment) gradients by their
+      // exact stops, and jsdom's CSS parser rejects a single-color-stop
+      // conic-gradient outright — irrelevant to the real bug this test
+      // guards, so three choices keeps both states multi-stop.
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+            { id: 'c3', label: 'Third', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByLabelText('No repeats'));
+
+      const wheel = screen.getByTestId('choiceWheel');
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+
+      await waitFor(() => expect(screen.getAllByText('First').length).toBeGreaterThan(0));
+
+      // Still the three-segment (pre-pick) gradient while the 3s spin
+      // transition is in flight — the pointer must land on the wedge it
+      // was animated toward, not one recomputed from the shrunken pool.
+      // jsdom normalizes hex colors to rgb() in computed style strings.
+      expect(wheel.style.background).toContain('rgb(2, 136, 209) 240deg 360deg');
+
+      fireEvent.transitionEnd(wheel);
+
+      await waitFor(() => {
+        // Second + Third remain, each now a 180deg half.
+        expect(wheel.style.background).toBe(
+          'conic-gradient(rgb(79, 195, 247) 0deg 180deg, rgb(129, 212, 250) 180deg 360deg)',
+        );
+      });
+    });
+
+    it('shows the remaining-pool percentage on undrawn rows once picking starts', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByLabelText('No repeats'));
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+
+      await waitFor(() => expect(screen.getAllByText('First').length).toBeGreaterThan(0));
+      fireEvent.transitionEnd(screen.getByTestId('choiceWheel'));
+
+      // "Second" is now the only item left in the pool: 100%, not 50%.
+      const secondRow = screen.getByDisplayValue('Second').closest('div');
+      await waitFor(() => {
+        expect(secondRow.textContent).toContain('100%');
+      });
+      // "First" is drawn: no misleading percentage on it.
+      const firstRow = screen.getByDisplayValue('First').closest('div');
+      expect(firstRow.textContent).toContain('—');
+    });
+
+    it('does not reset the pool when re-expanding the group', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Group A',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+        { id: 'g2', name: 'Group B', choices: [{ id: 'c3', label: 'X', weight: 1 }] },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByLabelText('No repeats'));
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+      await waitFor(() => {
+        const drawn = JSON.parse(localStorage.getItem('random-choices-drawn'));
+        expect(drawn.g1).toEqual(['c1']);
+      });
+
+      // Switch to Group B, then back to Group A.
+      const expandButtons = screen.getAllByLabelText(/Expand group|Expanded/);
+      fireEvent.click(expandButtons[1]);
+      fireEvent.click(screen.getAllByLabelText(/Expand group|Expanded/)[0]);
+
+      const drawn = JSON.parse(localStorage.getItem('random-choices-drawn'));
+      expect(drawn.g1).toEqual(['c1']);
+    });
+
+    it('ignores stale drawn ids when No repeats is off', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      // Simulates state left over from a prior session/tab where this group
+      // had No repeats on and had drawn "First" — the toggle is off now.
+      localStorage.setItem('random-choices-drawn', JSON.stringify({ g1: ['c1'] }));
+
+      render(<WeightedChoices />);
+
+      const firstRow = screen.getByDisplayValue('First').closest('div');
+      expect(firstRow.textContent).not.toContain('—');
+      expect(firstRow.textContent).toContain('50%');
+    });
+
+    it('disables PICK once only a zero-weight choice remains in the pool', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 0 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByLabelText('No repeats'));
+
+      const pickButton = screen.getByRole('button', { name: /PICK/i });
+      fireEvent.click(pickButton);
+
+      await waitFor(() => expect(screen.getAllByText('First').length).toBeGreaterThan(0));
+
+      // Only "Second" (weight 0) is left in the pool — nothing pickable.
+      await waitFor(() => expect(pickButton).toBeDisabled());
+    });
+  });
+
   describe('Spinner', () => {
     it('renders a wheel with a data-testid for the current group', () => {
       const groupsData = [
