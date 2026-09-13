@@ -11,7 +11,7 @@ import {
   buildPercentageTable,
   buildRepMaxTable,
 } from '../../lib/epley';
-import { calculatePlatesPerSide } from '../../lib/plateMath';
+import { calculatePlatesPerSide, BAR_WEIGHT } from '../../lib/plateMath';
 import { buildWarmupRamp } from '../../lib/warmup';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground';
@@ -191,7 +191,10 @@ export default function FitnessCalculator() {
     const percentageBreakdown = buildPercentageTable(estimatedOneRm);
 
     const warmupSteps = buildWarmupRamp(weight).map((step, index) => {
-      const roundedWeight = roundToLoadableStep(step.weight, unit);
+      // A rounded step can land below the bar's own weight (e.g. 40% of a light
+      // working weight); clamp up to the bar minimum since you can't load less
+      // than an empty bar.
+      const roundedWeight = Math.max(BAR_WEIGHT[unit], roundToLoadableStep(step.weight, unit));
       const { plates, remainder } = calculatePlatesPerSide(roundedWeight, unit);
       return { ...step, order: index + 1, roundedWeight, plates, remainder };
     });

@@ -254,10 +254,36 @@ describe('FitnessCalculator', () => {
     render(<FitnessCalculator />);
     expect(screen.getByRole('heading', { name: 'Warmup Ramp' })).toBeInTheDocument();
     expect(screen.getByText('Warmup 1')).toBeInTheDocument();
-    expect(screen.getByText('40% · 5 reps · 40 lb · bar only')).toBeInTheDocument();
+    // 40% of 100 = 40, rounds to 40, but that's below the 45 lb bar itself, so it
+    // clamps up to the bar weight (see plateMath.BAR_WEIGHT).
+    expect(screen.getByText('40% · 5 reps · 45 lb · bar only')).toBeInTheDocument();
     expect(screen.getByText('55% · 5 reps · 55 lb · 5 per side')).toBeInTheDocument();
     expect(screen.getByText('70% · 3 reps · 70 lb · 10+2.5 per side')).toBeInTheDocument();
     expect(screen.getByText('85% · 2 reps · 85 lb · 10+10 per side')).toBeInTheDocument();
+  });
+
+  it('renders the warmup ramp with rounded weights and plate breakdowns on the kg path', () => {
+    // Working weight 45 kg, seeded via localStorage since there's no unit-toggle UI.
+    // Warmup scheme: 40%/5, 55%/5, 70%/3, 85%/2 (lib/warmup.js).
+    // Rounding step for kg is 2.5 (LOADABLE_STEP.kg); bar weight is 20 (BAR_WEIGHT.kg).
+    //
+    // Step 1: 45 * 0.40 = 18       -> round to nearest 2.5: 18/2.5=7.2 -> 7*2.5=17.5
+    //          17.5 < bar (20) -> clamps to 20. perSide=(20-20)/2=0 -> bar only.
+    // Step 2: 45 * 0.55 = 24.75    -> 24.75/2.5=9.9 -> 10*2.5=25
+    //          perSide=(25-20)/2=2.5 -> greedy [25,20,15,10,5,2.5,1.25]: takes 2.5 -> remainder 0.
+    // Step 3: 45 * 0.70 = 31.5     -> 31.5/2.5=12.6 -> 13*2.5=32.5
+    //          perSide=(32.5-20)/2=6.25 -> greedy: 5 (rem 1.25), then 1.25 (rem 0) -> "5+1.25".
+    // Step 4: 45 * 0.85 = 38.25    -> 38.25/2.5=15.3 -> 15*2.5=37.5
+    //          perSide=(37.5-20)/2=8.75 -> greedy: 5 (rem 3.75), 2.5 (rem 1.25), 1.25 (rem 0) -> "5+2.5+1.25".
+    localStorage.setItem('fitness-inputs', JSON.stringify({ weight: 45, repetitions: 5, unit: 'kg' }));
+
+    render(<FitnessCalculator />);
+
+    expect(screen.getByRole('heading', { name: 'Warmup Ramp' })).toBeInTheDocument();
+    expect(screen.getByText('40% · 5 reps · 20 kg · bar only')).toBeInTheDocument();
+    expect(screen.getByText('55% · 5 reps · 25 kg · 2.5 per side')).toBeInTheDocument();
+    expect(screen.getByText('70% · 3 reps · 32.5 kg · 5+1.25 per side')).toBeInTheDocument();
+    expect(screen.getByText('85% · 2 reps · 37.5 kg · 5+2.5+1.25 per side')).toBeInTheDocument();
   });
 
   it('sets html and body background to white on mount', () => {
