@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useShakeDetection } from '../../lib/useShakeDetection';
+import { useSoundCue } from './SoundContext';
 import indexStyles from './index.module.css';
 import styles from './MagicEightBall.module.css';
 
@@ -28,11 +29,13 @@ export const EIGHT_BALL_ANSWERS = [
 
 export default function MagicEightBall() {
   const [answer, setAnswer] = useState(null);
+  const play = useSoundCue();
 
   const handleShake = useCallback(() => {
     const index = Math.floor(Math.random() * EIGHT_BALL_ANSWERS.length);
     setAnswer(EIGHT_BALL_ANSWERS[index]);
-  }, []);
+    play('shake');
+  }, [play]);
 
   useShakeDetection(handleShake);
 

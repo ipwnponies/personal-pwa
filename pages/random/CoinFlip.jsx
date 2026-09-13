@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useFlickGesture } from '../../lib/useFlickGesture';
+import { useSoundCue } from './SoundContext';
 import indexStyles from './index.module.css';
 import styles from './CoinFlip.module.css';
 
@@ -8,10 +9,12 @@ const flipCoin = () => (Math.random() < 0.5 ? 'Heads' : 'Tails');
 export default function CoinFlip() {
   const [result, setResult] = useState(null);
   const [flipCount, setFlipCount] = useState(0);
+  const play = useSoundCue();
 
   const handleFlip = () => {
     setResult(flipCoin());
     setFlipCount((count) => count + 1);
+    play('flip');
   };
 
   const flick = useFlickGesture(handleFlip);
