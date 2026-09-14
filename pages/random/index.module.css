@@ -23,7 +23,7 @@
 
 /* Tab styling */
 .tabs {
-  max-width: 320px;
+  max-width: 480px;
   margin: 0 auto;
   /* Clears .soundToggle (top 0.75rem + height 3rem = 3.75rem) with room to
    * spare. .soundToggle is absolutely positioned relative to the viewport
@@ -33,17 +33,43 @@
   padding-top: 4.5rem;
 }
 
+/* Horizontally scrolling carousel rather than 6 equal-width tabs: at phone
+ * widths, forcing all 6 into one fixed-width row leaves too little space per
+ * label to stay legible (CHOICES/SHUFFLE wrap or clip) no matter how far the
+ * font is shrunk. Each tab keeps its natural, readable width instead, and
+ * the strip scrolls. The fade at both edges signals there's more to scroll
+ * to; scroll-snap gives each tap/swipe a clean resting position. */
 .tabList {
   display: flex;
+  overflow-x: auto;
+  /* Without this, dragging the strip past either end chains the scroll to
+   * the document, which iOS Safari / Chrome Android read as a back/forward
+   * navigation swipe. */
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  /* Keeps snap points (and scrollIntoView's target rect) clear of the mask's
+   * fade zone at both ends, so the first/last tab doesn't get pulled back
+   * toward an inner tab when a free drag lands near an edge. */
+  scroll-padding: 0 12px;
   margin: 0;
-  padding: 0;
+  /* Padding, not the mask, reserves room for the first/last label so the
+   * edge fade dims empty space rather than the text itself. */
+  padding: 0 12px;
   list-style: none;
   border-bottom: 2px solid #2a2a4a;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+  mask-image: linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent);
+}
+
+.tabList::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
-  flex: 1;
-  padding: 16px 0;
+  flex: 0 0 auto;
+  scroll-snap-align: center;
+  padding: 16px 18px;
   text-align: center;
   font-size: 0.85rem;
   font-weight: 500;
@@ -59,6 +85,15 @@
 
 .tab:hover {
   color: #bbb;
+}
+
+/* react-tabs' own default .react-tabs__tab:focus style never applies here
+ * (styles.tab fully replaces its className), so without this, arrow-key
+ * navigation across the carousel has no visible focus indicator at all. */
+.tab:focus-visible {
+  outline: 1px solid #4fc3f7;
+  outline-offset: -3px;
+  border-radius: 4px;
 }
 
 .tabSelected {
