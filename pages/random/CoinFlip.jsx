@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useFlickGesture } from '../../lib/useFlickGesture';
-import { useSoundCue } from './SoundContext';
+import { useSoundCue } from '../../components/random/SoundContext';
 import indexStyles from './index.module.css';
 import styles from './CoinFlip.module.css';
 

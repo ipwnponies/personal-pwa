@@ -17,7 +17,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { weightedRandomChoice, generateId, pushHistoryEntry, reorderById } from '../../lib/random';
 import ShareResultButton from './ShareResultButton';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
-import { useSoundCue } from './SoundContext';
+import { useSoundCue } from '../../components/random/SoundContext';
 import styles from './index.module.css';
 import wheelStyles from './WeightedChoices.module.css';
 

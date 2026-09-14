@@ -11,7 +11,7 @@ import CoinFlip from './CoinFlip';
 import MagicEightBall from './MagicEightBall';
 import ShuffleList from './ShuffleList';
 import CardDraw from './CardDraw';
-import { SoundProvider, SoundToggle } from './SoundContext';
+import { SoundProvider, SoundToggle } from '../../components/random/SoundContext';
 import { usePageBackground, PageThemeScript } from '../../lib/usePageBackground';
 import { pwaMetaTags } from '../../components/layout';
 

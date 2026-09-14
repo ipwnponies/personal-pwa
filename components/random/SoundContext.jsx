@@ -3,7 +3,7 @@ import React, {
 } from 'react';
 import PropTypes from 'prop-types';
 import { createRandomSound } from '../../lib/randomSound';
-import styles from './index.module.css';
+import styles from '../../pages/random/index.module.css';
 
 const STORAGE_KEY = 'random-sound-on';
 
