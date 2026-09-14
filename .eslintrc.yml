@@ -17,4 +17,11 @@ parserOptions:
   sourceType: module
 plugins:
   - react
+  - local-rules
 rules: {}
+overrides:
+  - files:
+      - 'pages/**/*.js'
+      - 'pages/**/*.jsx'
+    rules:
+      local-rules/require-page-default-export: error
