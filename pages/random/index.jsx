@@ -1,6 +1,6 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { TabList, Tabs, Tab, TabPanel } from 'react-tabs';
 
 import 'react-tabs/style/react-tabs.css';
@@ -69,6 +69,19 @@ export default function Random() {
   const theme = usePageBackground('#1a1a2e');
   const { basePath } = useRouter();
   const [tabIndex, setTabIndex] = useState(0);
+  // Same pattern as highlightedRowRef in pages/fitness/index.jsx: one ref,
+  // reassigned to whichever tab's label span is currently selected.
+  const selectedTabRef = useRef(null);
+
+  useEffect(() => {
+    // Scroll the selected tab's parent <li> (the actual react-tabs tab
+    // element) into view within the scrolling strip.
+    selectedTabRef.current?.parentElement?.scrollIntoView({
+      behavior: 'smooth',
+      inline: 'center',
+      block: 'nearest',
+    });
+  }, [tabIndex]);
 
   const swipeLeft = useCallback(() => {
     setTabIndex((i) => Math.min(i + 1, TAB_COUNT - 1));
@@ -78,6 +91,8 @@ export default function Random() {
   }, []);
 
   const pageSwipe = useHorizontalSwipe(swipeLeft, swipeRight);
+
+  const stopTouchMovePropagation = useCallback((e) => e.stopPropagation(), []);
 
   return (
     <div
@@ -98,42 +113,56 @@ export default function Random() {
           selectedIndex={tabIndex}
           onSelect={setTabIndex}
         >
-          <TabList className={styles.tabList}>
+          <TabList
+            className={styles.tabList}
+            // The tab strip now scrolls horizontally on its own (carousel).
+            // Without this, a touch-drag here would also bubble to the
+            // page-level swipe classifier in useHorizontalSwipe and flip
+            // tabs underneath the scroll — same fix as .dragHandle in
+            // WeightedChoices.jsx.
+            onTouchMove={stopTouchMovePropagation}
+          >
+            {/*
+              react-tabs' own Tabs component clones each <Tab> with its
+              own `tabRef` prop (see UncontrolledTabs.js), which would
+              silently override one passed here. Ref a plain span inside
+              the label instead — see selectedTabRef above.
+            */}
             <Tab
               className={styles.tab}
               selectedClassName={styles.tabSelected}
             >
-              Dice
+              <span ref={tabIndex === 0 ? selectedTabRef : undefined}>Dice</span>
             </Tab>
             <Tab
               className={styles.tab}
               selectedClassName={styles.tabSelected}
             >
-              Choices
+              <span ref={tabIndex === 1 ? selectedTabRef : undefined}>Choices</span>
             </Tab>
             <Tab
               className={styles.tab}
               selectedClassName={styles.tabSelected}
             >
-              Coin
+              <span ref={tabIndex === 2 ? selectedTabRef : undefined}>Coin</span>
             </Tab>
             <Tab
               className={styles.tab}
               selectedClassName={styles.tabSelected}
             >
-              8-Ball
+              <span ref={tabIndex === 3 ? selectedTabRef : undefined}>8-Ball</span>
             </Tab>
             <Tab
               className={styles.tab}
               selectedClassName={styles.tabSelected}
             >
-              Shuffle
+              <span ref={tabIndex === 4 ? selectedTabRef : undefined}>Shuffle</span>
             </Tab>
             <Tab
               className={styles.tab}
               selectedClassName={styles.tabSelected}
             >
-              Cards
+              <span ref={tabIndex === 5 ? selectedTabRef : undefined}>Cards</span>
             </Tab>
           </TabList>
           <TabPanel>

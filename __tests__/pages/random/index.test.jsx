@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import Random from '../../../pages/random/index';
 import { pwaMetaTags } from '../../../components/layout';
 
@@ -11,6 +11,15 @@ vi.mock('next/router', () => ({
 vi.mock('../../../components/layout', () => ({
   pwaMetaTags: vi.fn(() => null),
 }));
+
+// jsdom doesn't implement scrollIntoView; every render of <Random /> now
+// triggers it (the tab carousel scrolls the selected tab into view on
+// mount), so this needs to be stubbed for the whole file, not just the
+// carousel-specific test below. Same approach as
+// __tests__/pages/fitness/index.test.jsx.
+beforeEach(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 describe('Random page head', () => {
   it('calls pwaMetaTags with the router basePath and the page theme color', () => {
@@ -54,5 +63,20 @@ describe('Random page tabs', () => {
   it('renders a Cards tab', () => {
     render(<Random />);
     expect(screen.getByText('Cards')).toBeInTheDocument();
+  });
+});
+
+describe('Random page tab carousel', () => {
+  it('scrolls the newly selected tab into view within the strip', () => {
+    render(<Random />);
+    Element.prototype.scrollIntoView.mockClear(); // drop the initial-render call for Dice
+
+    fireEvent.click(screen.getByText('Cards'));
+
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      inline: 'center',
+      block: 'nearest',
+    });
   });
 });
