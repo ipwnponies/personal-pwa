@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { SoundProvider, SoundToggle } from '../../../pages/random/SoundContext';
+import { SoundProvider, SoundToggle } from '../../../components/random/SoundContext';
 import DiceRoll from '../../../pages/random/DiceRoll';
 
 afterEach(() => {

@@ -1,6 +1,7 @@
 ---
 paths:
   - "pages/random/**"
+  - "components/random/**"
   - "lib/random.js"
   - "lib/random.test.js"
   - "lib/randomSound.js"
@@ -29,7 +30,7 @@ Six tools in one page, swipe-navigable tabs.
 - `pages/random/CardDraw.jsx` — draw cards from a 52-card deck without replacement. Bulk DRAW button (configurable count) and flicking the deck-face (always draws exactly one, via `lib/useFlickGesture.js`) both trigger a draw.
 - `pages/random/ShareResultButton.jsx` — shared SHARE button rendered inside a tab's result block. Used by `DiceRoll` and `WeightedChoices`; the other four tabs have no share action yet.
 - `pages/random/index.module.css` — shared page/tab chrome (`.container`, `.rollButton`, `.result`, `.resultBadge`, `.settingRow`, `.soundToggle`, etc.) used by every tab. Each new tab also has its own sibling `.module.css` for styles that don't overlap the shared ones (`CoinFlip.module.css`, `MagicEightBall.module.css`, `ShuffleList.module.css`, `CardDraw.module.css`, `WeightedChoices.module.css`).
-- `pages/random/SoundContext.jsx` — `SoundProvider` (wraps the page in `index.jsx`, holds one `lib/randomSound.js` instance + the persisted mute state), `SoundToggle` (the 🔊/🔇 button, rendered inside the provider since `index.jsx` can't consume its own context), `useSoundCue()` (returns `play`, no-op default outside a provider so every tab still renders standalone in tests).
+- `components/random/SoundContext.jsx` — `SoundProvider` (wraps the page in `index.jsx`, holds one `lib/randomSound.js` instance + the persisted mute state), `SoundToggle` (the 🔊/🔇 button, rendered inside the provider since `index.jsx` can't consume its own context), `useSoundCue()` (returns `play`, no-op default outside a provider so every tab still renders standalone in tests). Lives outside `pages/random/` because Next.js treats every file directly under `pages/` as a route requiring a default-export component; this module only has named exports.
 - `lib/randomSound.js` — synthesized Web Audio cues (`RANDOM_CUES`, `createRandomSound`) for the six primary actions, same factory shape as `lib/aquarium/sound.js` and `lib/doodleSound.js`. No bundled audio assets, no new dependency; see `docs/superpowers/specs/2026-09-12-random-sound-effects-design.md` for the design rationale.
 - `lib/random.js` — pure helpers: `weightedRandomChoice`, `generateId`, `clamp`, `shuffle`, `buildDeck`, `drawCards`, `reorderById`. `clamp`/`generateId` are also reused by `aquarium` — check before adding near-duplicates elsewhere.
 - `lib/useFlickGesture.js` — one-shot flick detector (fast + far touch), shared by `CoinFlip` and `CardDraw`.

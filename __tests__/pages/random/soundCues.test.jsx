@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { SoundProvider } from '../../../pages/random/SoundContext';
+import { SoundProvider } from '../../../components/random/SoundContext';
 import DiceRoll from '../../../pages/random/DiceRoll';
 import WeightedChoices from '../../../pages/random/WeightedChoices';
 import CoinFlip from '../../../pages/random/CoinFlip';
@@ -13,7 +13,7 @@ import CardDraw from '../../../pages/random/CardDraw';
 // tab is exercised inside a genuine provider tree.
 const mockPlay = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../pages/random/SoundContext', async (importOriginal) => {
+vi.mock('../../../components/random/SoundContext', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,

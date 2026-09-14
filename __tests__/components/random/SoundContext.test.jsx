@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { SoundProvider, SoundToggle, useSoundCue } from '../../../pages/random/SoundContext';
+import { SoundProvider, SoundToggle, useSoundCue } from '../../../components/random/SoundContext';
 
 const STORAGE_KEY = 'random-sound-on';
 

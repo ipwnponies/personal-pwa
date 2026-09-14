@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import ShareResultButton from './ShareResultButton';
-import { useSoundCue } from './SoundContext';
+import { useSoundCue } from '../../components/random/SoundContext';
 import styles from './index.module.css';
 
 const rollDice = (lowerBound, upperBound) =>

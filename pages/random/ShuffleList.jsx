@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { shuffle } from '../../lib/random';
-import { useSoundCue } from './SoundContext';
+import { useSoundCue } from '../../components/random/SoundContext';
 import indexStyles from './index.module.css';
 import styles from './ShuffleList.module.css';
 

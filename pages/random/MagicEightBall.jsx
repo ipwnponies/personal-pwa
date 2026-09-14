@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useShakeDetection } from '../../lib/useShakeDetection';
-import { useSoundCue } from './SoundContext';
+import { useSoundCue } from '../../components/random/SoundContext';
 import indexStyles from './index.module.css';
 import styles from './MagicEightBall.module.css';
 

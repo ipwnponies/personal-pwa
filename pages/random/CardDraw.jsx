@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { buildDeck, drawCards, shuffle } from '../../lib/random';
 import { useFlickGesture } from '../../lib/useFlickGesture';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
-import { useSoundCue } from './SoundContext';
+import { useSoundCue } from '../../components/random/SoundContext';
 import indexStyles from './index.module.css';
 import styles from './CardDraw.module.css';
 
