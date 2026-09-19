@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
 import DoodleCanvas from './DoodleCanvas';
 import styles from './doodle.module.css';
@@ -26,6 +26,10 @@ beforeEach(() => {
   // Freeze the drift loop so pointer behavior is isolated.
   vi.stubGlobal('requestAnimationFrame', () => 0);
   vi.stubGlobal('cancelAnimationFrame', () => {});
+});
+
+afterEach(() => {
+  delete navigator.vibrate;
 });
 
 const stage = (container) => container.querySelector('svg');
@@ -1211,6 +1215,78 @@ describe('DoodleCanvas', () => {
     expect(sound.playNote).toHaveBeenCalledTimes(1);
     const [, mergeType] = sound.playNote.mock.calls[0];
     expect(['circle', 'square', 'triangle', 'star']).toContain(mergeType);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  // jsdom has no navigator.vibrate, so define it per test rather than
+  // stubbing the whole navigator object.
+  const installVibrate = () => {
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true });
+    return vibrate;
+  };
+
+  // Spawns one shape and double-taps it to pop. rng high so the shape is
+  // large enough to split, matching the existing pop tests. pointerdown and
+  // pointerup both fire on the shape group — a pointerdown on the svg has no
+  // [data-id] ancestor and would spawn another shape instead of tapping this
+  // one. Both taps land inside DOUBLE_TAP_MS (300ms) because fireEvent is
+  // synchronous under real timers.
+  const spawnAndPop = (container) => {
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 3 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 3 });
+  };
+
+  it('vibrates on a pop', () => {
+    const vibrate = installVibrate();
+    const { container } = render(<DoodleCanvas rng={seq([0.99])} sound={mockSound()} />);
+    spawnAndPop(container);
+    expect(vibrate).toHaveBeenCalled();
+  });
+
+  it('stays silent on a pop while muted', () => {
+    const vibrate = installVibrate();
+    const { container, getByLabelText } = render(
+      <DoodleCanvas rng={seq([0.99])} sound={mockSound()} />,
+    );
+    fireEvent.click(getByLabelText('Mute'));
+    spawnAndPop(container);
+    expect(vibrate).not.toHaveBeenCalled();
+  });
+
+  it('runs without navigator.vibrate', () => {
+    const { container } = render(<DoodleCanvas rng={seq([0.99])} sound={mockSound()} />);
+    expect(() => spawnAndPop(container)).not.toThrow();
+  });
+
+  it('vibrates on a merge chime', () => {
+    // Near-identical to 'passes the merged shape type to playNote on a merge
+    // chime' above — closes the gap that haptics' merge-vibration wiring
+    // (DoodleCanvas.jsx's advance-loop 'merge' event handler) had no
+    // component-level test.
+    const vibrate = installVibrate();
+    const rng = seq([0, 0, 0, 0, 0, 0]);
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={rng} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerDown(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    expect(shapeGroups(container)).toHaveLength(2);
+
+    act(() => { cbs[cbs.length - 1](16); });
+
+    expect(shapeGroups(container)).toHaveLength(1); // merged
+    expect(vibrate).toHaveBeenCalled();
 
     nowSpy.mockRestore();
     rectSpy.mockRestore();

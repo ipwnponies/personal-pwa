@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useDoodleObjects } from '../../lib/useDoodleObjects';
 import { createDoodleSound } from '../../lib/doodleSound';
+import { createDoodleHaptics } from '../../lib/doodleHaptics';
 import { clamp } from '../../lib/random';
 import {
   MIN_SIZE, MAX_SIZE, DEFAULT_MAX_THROW_SPEED, THROW_SAMPLE_WINDOW_MS, throwVelocity,
@@ -69,6 +70,9 @@ export default function DoodleCanvas({ rng, sound }) {
   const soundRef = useRef(null);
   if (soundRef.current === null) soundRef.current = sound || createDoodleSound();
 
+  const hapticsRef = useRef(null);
+  if (hapticsRef.current === null) hapticsRef.current = createDoodleHaptics();
+
   // Read once at mount rather than reactively — kids aren't expected to
   // resize or rotate the window mid-play.
   const sizeMultiplierRef = useRef(null);
@@ -121,6 +125,7 @@ export default function DoodleCanvas({ rng, sound }) {
   }, []);
   useEffect(() => {
     soundRef.current.setMuted(muted);
+    hapticsRef.current.setMuted(muted);
     try {
       localStorage.setItem(MUTE_KEY, String(muted));
     } catch {
@@ -240,9 +245,11 @@ export default function DoodleCanvas({ rng, sound }) {
         events.forEach((event) => {
           if (event.type === 'bounce') {
             addParticles(spawnBurst(event.x, event.y, event.color, event.normal, COLLISION_BURST_MAX_AGE));
+            hapticsRef.current.vibrate('bounce');
           } else if (event.type === 'merge') {
             addParticles(spawnSpiral(event.fromX, event.fromY, event.x, event.y, event.color));
             soundRef.current.playNote(event.note, event.shapeType);
+            hapticsRef.current.vibrate('merge');
           }
         });
       }
@@ -325,6 +332,7 @@ export default function DoodleCanvas({ rng, sound }) {
       lastTapRef.current.delete(id);
       popShape(id, tuningRef.current.driftMin, tuningRef.current.driftMax);
       soundRef.current.playPop();
+      hapticsRef.current.vibrate('pop');
       if (shape) {
         addParticles(spawnBurst(shape.x, shape.y, shape.color));
       }
