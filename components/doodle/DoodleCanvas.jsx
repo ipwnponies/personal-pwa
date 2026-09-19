@@ -24,6 +24,13 @@ const MUTE_KEY = 'doodle-muted';
 const TRAILS_KEY = 'doodle-trails';
 const MODE_KEY = 'doodle-mode';
 const TUNING_KEY = 'doodle-tuning';
+const TIME_SCALE_KEY = 'doodle-time-scale';
+// Multipliers applied to the frame delta, cycled by the toolbar button.
+const TIME_SCALES = [1, 0.25, 0];
+// Keyed by the current scale; like the mode and mute buttons, the label names
+// what a click does next, not the current state.
+const TIME_SCALE_LABELS = { 1: 'Slow motion', 0.25: 'Freeze', 0: 'Normal speed' };
+const TIME_SCALE_ICONS = { 1: '▶️', 0.25: '🐢', 0: '⏸️' };
 const MAX_DT = 0.05; // clamp frame delta so a backgrounded tab doesn't jump
 const MAX_POINTERS = 10; // defensive ceiling, not a gameplay limit
 const PINCH_WINDOW_MS = 150; // two touches must land within this of each other to start a pinch
@@ -104,6 +111,9 @@ export default function DoodleCanvas({ rng, sound }) {
   // fighting each other (a drag meant to nudge a half-built shape no longer
   // leaves behind a stray doodle).
   const [mode, setMode] = useState('shape');
+  const [timeScale, setTimeScale] = useState(1);
+  const timeScaleRef = useRef(timeScale);
+  timeScaleRef.current = timeScale;
 
   const trailsEnabledRef = useRef(trailsEnabled);
   trailsEnabledRef.current = trailsEnabled;
@@ -188,6 +198,25 @@ export default function DoodleCanvas({ rng, sound }) {
     }
   }, [tuning]);
 
+  // Load + persist the slow-motion choice. A stored freeze (0) is coerced
+  // back to 1: the app must never open frozen, because a kid cannot work out
+  // why nothing moves.
+  useEffect(() => {
+    try {
+      const stored = Number(localStorage.getItem(TIME_SCALE_KEY));
+      if (TIME_SCALES.includes(stored) && stored !== 0) setTimeScale(stored);
+    } catch {
+      // ignore — default to normal speed
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(TIME_SCALE_KEY, String(timeScale));
+    } catch {
+      // ignore — preference just won't persist
+    }
+  }, [timeScale]);
+
   const handleTuningChange = (key, value) => {
     if (!Number.isFinite(value)) return;
     setTuning((t) => ({ ...t, [key]: value }));
@@ -204,8 +233,30 @@ export default function DoodleCanvas({ rng, sound }) {
     // fixed-size particle buffer.
     let frameCount = 0;
     const tick = (now) => {
-      const dt = Math.min((now - last) / 1000, MAX_DT);
+      const rawDt = Math.min((now - last) / 1000, MAX_DT);
       last = now;
+      // A frozen canvas skips the whole body rather than advancing with a
+      // zero delta. Two parts of this loop are not dt-driven, so dt === 0
+      // does not actually freeze anything: resolveCollisions is purely
+      // positional, so already-overlapping shapes keep merging and
+      // position-correcting; and dust spawning is gated on vx/vy, which a
+      // zero delta never changes, while advanceParticles(p, 0) ages nothing
+      // and its age < maxAge filter drops nothing — so particles pile up to
+      // maxParticles and never expire. `last` is still updated above, or
+      // unfreezing would feed one huge delta.
+      if (timeScaleRef.current === 0) {
+        // advanceParticles is the only place maxParticles gets enforced, and
+        // it's skipped for the rest of this branch — but addParticles (tap
+        // squash/burst) is still reachable while frozen, so particles would
+        // otherwise grow unbounded for as long as the freeze lasts.
+        const { maxParticles } = tuningRef.current;
+        if (particlesRef.current.length > maxParticles) {
+          particlesRef.current = particlesRef.current.slice(-maxParticles);
+        }
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      const dt = rawDt * timeScaleRef.current;
       particlesRef.current = advanceParticles(particlesRef.current, dt, tuningRef.current.maxParticles);
       const rect = svgRef.current?.getBoundingClientRect();
       if (rect && rect.width && rect.height) {
@@ -594,6 +645,16 @@ export default function DoodleCanvas({ rng, sound }) {
           onClick={() => setTrailsEnabled((t) => !t)}
         >
           {trailsEnabled ? '💨' : '🚫'}
+        </button>
+        <button
+          type="button"
+          className={styles.toolButton}
+          aria-label={TIME_SCALE_LABELS[timeScale]}
+          onClick={() => setTimeScale(
+            (t) => TIME_SCALES[(TIME_SCALES.indexOf(t) + 1) % TIME_SCALES.length],
+          )}
+        >
+          {TIME_SCALE_ICONS[timeScale]}
         </button>
         <button
           type="button"

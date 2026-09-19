@@ -1291,4 +1291,214 @@ describe('DoodleCanvas', () => {
     nowSpy.mockRestore();
     rectSpy.mockRestore();
   });
+
+  it('cycles the toolbar speed button through slow motion, freeze and normal', () => {
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Slow motion'));
+    expect(localStorage.getItem('doodle-time-scale')).toBe('0.25');
+    fireEvent.click(getByLabelText('Freeze'));
+    expect(localStorage.getItem('doodle-time-scale')).toBe('0');
+    fireEvent.click(getByLabelText('Normal speed'));
+    expect(localStorage.getItem('doodle-time-scale')).toBe('1');
+  });
+
+  it('restores a stored slow-motion choice but never opens frozen', () => {
+    localStorage.setItem('doodle-time-scale', '0.25');
+    const { getByLabelText, unmount } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    expect(getByLabelText('Freeze')).toBeInTheDocument(); // next action from 0.25
+    unmount();
+
+    localStorage.setItem('doodle-time-scale', '0');
+    const second = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    // A child cannot diagnose why nothing moves, so a stored freeze opens at 1.
+    expect(second.getByLabelText('Slow motion')).toBeInTheDocument();
+  });
+
+  it('freezing stops the shape moving but leaves pointer interaction working', () => {
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container, getByLabelText } = render(
+      <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+    );
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    fireEvent.click(getByLabelText('Slow motion'));
+    fireEvent.click(getByLabelText('Freeze'));
+
+    const before = shapeGroups(container)[0].getAttribute('transform');
+    act(() => { cbs[cbs.length - 1](16); });
+    act(() => { cbs[cbs.length - 1](32); });
+    expect(shapeGroups(container)[0].getAttribute('transform')).toBe(before);
+    // No dust accumulates either: advanceParticles(p, 0) would age nothing,
+    // so the tick must skip the body rather than pass a zero delta.
+    expect(container.querySelectorAll('circle[cx]')).toHaveLength(0);
+
+    // Pointer interaction still works while frozen.
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 2 });
+    expect(shapeGroups(container)).toHaveLength(2);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('caps particles at tuning.maxParticles even while frozen', () => {
+    // Regression: advanceParticles (the only place maxParticles is enforced)
+    // never runs on a frozen tick, but addParticles (tap-spawned squash
+    // poofs) is still reachable while frozen — so without a trim in the
+    // freeze branch itself, particles would accumulate unbounded for as
+    // long as the freeze lasts.
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container, getByLabelText } = render(
+      <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+    );
+    fireEvent.click(getByLabelText('Open tuning panel'));
+    fireEvent.change(getByLabelText('Max particles'), { target: { value: '3' } });
+    fireEvent.click(getByLabelText('Close tuning panel'));
+
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    fireEvent.click(getByLabelText('Slow motion'));
+    fireEvent.click(getByLabelText('Freeze'));
+
+    const g = container.querySelector('svg > g[data-id]');
+    // A single tap-squash spawns 5 particles — already past the 3-particle
+    // cap — while frozen.
+    fireEvent.pointerDown(g, { clientX: 500, clientY: 500, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 500, clientY: 500, pointerId: 2 });
+    // Drive one frozen tick: this is where the trim must happen. The tick
+    // itself triggers no state update, so it won't force a re-render by
+    // itself — toggling mute afterwards forces one, surfacing whatever the
+    // (now-trimmed) particle ref actually holds.
+    act(() => { cbs[cbs.length - 1](16); });
+    fireEvent.click(getByLabelText('Mute'));
+
+    expect(container.querySelectorAll('circle[cx]').length).toBe(3);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('a frozen tick keeps re-arming itself and motion resumes after unfreezing', () => {
+    // Regression: if the freeze branch's requestAnimationFrame(tick) call
+    // were ever deleted, cbs would stop growing and driving "the latest
+    // frame" would silently keep re-running the same already-early-returning
+    // callback — the existing freeze tests would still pass despite the loop
+    // being permanently stuck.
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container, getByLabelText } = render(
+      <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+    );
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    fireEvent.click(getByLabelText('Slow motion'));
+    fireEvent.click(getByLabelText('Freeze'));
+
+    const cbsCountBeforeFrozenTick = cbs.length;
+    act(() => { cbs[cbs.length - 1](16); });
+    expect(cbs.length).toBeGreaterThan(cbsCountBeforeFrozenTick); // re-armed itself while frozen
+
+    fireEvent.click(getByLabelText('Normal speed')); // unfreeze
+
+    const before = shapeGroups(container)[0].getAttribute('transform');
+    act(() => { cbs[cbs.length - 1](32); }); // first tick after unfreezing
+    const after = shapeGroups(container)[0].getAttribute('transform');
+    expect(after).not.toBe(before); // motion actually resumed, not just the loop ticking
+
+    // Bounded displacement: if `last` weren't correctly recorded during the
+    // freeze, unfreezing would apply one huge stale delta and the shape
+    // would jump far more than one normal frame's worth of drift.
+    const parse = (t) => t.match(/^translate\(([-\d.]+) ([-\d.]+)\)/).slice(1, 3).map(Number);
+    const [xBefore, yBefore] = parse(before);
+    const [xAfter, yAfter] = parse(after);
+    expect(Math.hypot(xAfter - xBefore, yAfter - yBefore)).toBeLessThan(20);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('keeps advancing shapes at normal speed', () => {
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    const before = shapeGroups(container)[0].getAttribute('transform');
+    act(() => { cbs[cbs.length - 1](16); });
+    expect(shapeGroups(container)[0].getAttribute('transform')).not.toBe(before);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('slow motion (0.25x) produces roughly a quarter of normal speed\'s displacement', () => {
+    // Since dt = rawDt * timeScaleRef.current is the identity at scale 1,
+    // and the freeze branch (scale 0) never reaches this line at all, the
+    // multiplication itself is otherwise never exercised by a behavioral
+    // assertion — deleting it would not fail any other test.
+    const parse = (t) => t.match(/^translate\(([-\d.]+) ([-\d.]+)\)/).slice(1, 3).map(Number);
+
+    const driveAndMeasure = (scaleButtonLabels) => {
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container, getByLabelText, unmount } = render(
+        <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+      );
+      const svg = stage(container);
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      scaleButtonLabels.forEach((label) => fireEvent.click(getByLabelText(label)));
+
+      const [xBefore, yBefore] = parse(shapeGroups(container)[0].getAttribute('transform'));
+      act(() => { cbs[cbs.length - 1](16); });
+      const [xAfter, yAfter] = parse(shapeGroups(container)[0].getAttribute('transform'));
+
+      unmount();
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      return Math.hypot(xAfter - xBefore, yAfter - yBefore);
+    };
+
+    const normalDisplacement = driveAndMeasure([]);
+    const slowDisplacement = driveAndMeasure(['Slow motion']);
+
+    expect(normalDisplacement).toBeGreaterThan(0);
+    expect(slowDisplacement).toBeGreaterThan(0);
+    expect(slowDisplacement).toBeLessThan(normalDisplacement * 0.5); // meaningfully smaller
+    // Roughly a quarter, with generous tolerance — physics-integrated
+    // motion, not a pure arithmetic check.
+    expect(Math.abs(slowDisplacement - normalDisplacement * 0.25)).toBeLessThan(normalDisplacement * 0.1);
+  });
+
+  it('captures a flick throw while frozen, taking effect once unfrozen', () => {
+    // Cross-feature composition: pointer sampling (onPointerMove/onPointerUp)
+    // happens outside the rAF drift loop, so it isn't gated on timeScale —
+    // a flick performed while frozen should still compute and persist a
+    // real throw velocity, even though the shape never visibly moved.
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Slow motion'));
+    fireEvent.click(getByLabelText('Freeze'));
+    expect(getByLabelText('Normal speed')).toBeInTheDocument(); // confirms frozen (timeScale 0)
+
+    // Same flick sequence as 'a flick release throws the shape along the
+    // flick direction': first move clears MOVE_THRESHOLD, then 60px in 30ms.
+    const svg = spawnAndDrag(container, [
+      { x: 140, y: 100, t: 100 },
+      { x: 170, y: 100, t: 120 },
+      { x: 200, y: 100, t: 130 },
+    ]);
+    vi.setSystemTime(135);
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 100, pointerId: 2 });
+
+    const shape = persistedShape();
+    expect(Math.hypot(shape.vx, shape.vy)).toBeGreaterThan(0);
+    vi.useRealTimers();
+  });
 });
