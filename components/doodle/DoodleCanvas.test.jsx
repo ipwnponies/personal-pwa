@@ -243,6 +243,81 @@ describe('DoodleCanvas', () => {
     expect(shapeGroups(container)).toHaveLength(1); // shape survives a draw-mode clear
   });
 
+  it('tapping the trash button in shape mode shows an undo toast with shape-scoped wording', () => {
+    const { container, getByLabelText, getByRole } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    expect(shapeGroups(container)).toHaveLength(1);
+
+    fireEvent.click(getByLabelText('Clear shapes'));
+
+    expect(getByRole('status')).toHaveTextContent('Shapes cleared');
+    expect(getByRole('button', { name: /undo/i })).toBeTruthy();
+  });
+
+  it('tapping the trash button in stroke mode shows an undo toast with stroke-scoped wording', () => {
+    const { container, getByLabelText, getByRole } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Switch to draw mode'));
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(svg, { clientX: 60, clientY: 60, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 60, clientY: 60, pointerId: 1 });
+    expect(strokes(container)).toHaveLength(1);
+
+    fireEvent.click(getByLabelText('Clear doodles'));
+
+    expect(getByRole('status')).toHaveTextContent('Doodles cleared');
+    expect(getByRole('button', { name: /undo/i })).toBeTruthy();
+  });
+
+  it('undo restores only the objects cleared for that mode, leaving the other kind untouched', () => {
+    const { container, getByLabelText, getByRole } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    // Draw a stroke first (draw mode), then switch back to shape mode and spawn a shape.
+    fireEvent.click(getByLabelText('Switch to draw mode'));
+    fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerMove(svg, { clientX: 60, clientY: 60, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 60, clientY: 60, pointerId: 1 });
+    fireEvent.click(getByLabelText('Switch to shape mode'));
+    fireEvent.pointerDown(svg, { clientX: 300, clientY: 300, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 300, clientY: 300, pointerId: 2 });
+    expect(shapeGroups(container)).toHaveLength(1);
+    expect(strokes(container)).toHaveLength(1);
+
+    fireEvent.click(getByLabelText('Clear shapes'));
+    expect(shapeGroups(container)).toHaveLength(0);
+    expect(strokes(container)).toHaveLength(1); // stroke was never touched by a shape-mode clear
+
+    fireEvent.click(getByRole('button', { name: /undo/i }));
+    expect(shapeGroups(container)).toHaveLength(1); // shape restored
+    expect(strokes(container)).toHaveLength(1); // stroke still untouched
+  });
+
+  it('shows no toast when the trash button clears nothing (canvas already empty for that mode)', () => {
+    const { getByLabelText, queryByRole } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Clear shapes'));
+    expect(queryByRole('status')).toBeNull();
+  });
+
+  it('the undo toast disappears after 5s and the cleared objects are no longer recoverable', () => {
+    vi.useFakeTimers();
+    const { container, getByLabelText, queryByRole } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.click(getByLabelText('Clear shapes'));
+    expect(queryByRole('status')).toBeTruthy();
+
+    act(() => { vi.advanceTimersByTime(5000); });
+
+    expect(queryByRole('status')).toBeNull();
+    expect(queryByRole('button', { name: /undo/i })).toBeNull();
+    expect(shapeGroups(container)).toHaveLength(0); // still cleared, no way back
+
+    vi.useRealTimers();
+  });
+
   it('mute button toggles its label and tells the sound engine to mute', () => {
     const sound = mockSound();
     const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);

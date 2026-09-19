@@ -105,3 +105,47 @@
   padding: 0.4rem;
   cursor: pointer;
 }
+
+/* Undo toast for the trash button. `absolute`, not `fixed` (as in
+   WeightedChoices' version of this pattern), so it stays anchored to .wrap
+   rather than escaping to the viewport. */
+.undoToast {
+  position: absolute;
+  left: 50%;
+  bottom: 0.75rem;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: #2a2a3d;
+  border: 1px solid #3a3a5a;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Sized as a real touch target (48px floor, matching .toolButton) rather
+   than the text-only button WeightedChoices uses — this app is for young
+   children on touch devices. */
+.undoButton {
+  min-width: 48px;
+  min-height: 48px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: #4fc3f7;
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  pointer-events: auto;
+}
+
+.undoButton:hover {
+  color: #81d4fa;
+}
