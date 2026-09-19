@@ -1173,4 +1173,46 @@ describe('DoodleCanvas', () => {
     expect(after.vy).toBe(before.vy);
     vi.useRealTimers();
   });
+
+  it('passes the shape type to playNote on spawn and on tap', () => {
+    const sound = mockSound();
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+
+    const [, spawnType] = sound.playNote.mock.calls[0];
+    expect(['circle', 'square', 'triangle', 'star']).toContain(spawnType);
+
+    // Tap the shape itself: a pointerdown on the svg has no [data-id]
+    // ancestor and would spawn a second shape instead of tapping this one.
+    sound.playNote.mockClear();
+    const g = container.querySelector('svg > g[data-id]');
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    const [, tapType] = sound.playNote.mock.calls[0];
+    expect(tapType).toBe(spawnType);
+  });
+
+  it('passes the merged shape type to playNote on a merge chime', () => {
+    const sound = mockSound();
+    const rng = seq([0, 0, 0, 0, 0, 0]);
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={rng} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerDown(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    sound.playNote.mockClear();
+
+    act(() => { cbs[cbs.length - 1](16); });
+
+    expect(sound.playNote).toHaveBeenCalledTimes(1);
+    const [, mergeType] = sound.playNote.mock.calls[0];
+    expect(['circle', 'square', 'triangle', 'star']).toContain(mergeType);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
 });

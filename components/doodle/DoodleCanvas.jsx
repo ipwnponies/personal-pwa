@@ -242,7 +242,7 @@ export default function DoodleCanvas({ rng, sound }) {
             addParticles(spawnBurst(event.x, event.y, event.color, event.normal, COLLISION_BURST_MAX_AGE));
           } else if (event.type === 'merge') {
             addParticles(spawnSpiral(event.fromX, event.fromY, event.x, event.y, event.color));
-            soundRef.current.playNote(event.note);
+            soundRef.current.playNote(event.note, event.shapeType);
           }
         });
       }
@@ -338,7 +338,7 @@ export default function DoodleCanvas({ rng, sound }) {
     });
     triggerPulse(id);
     if (shape) {
-      soundRef.current.playNote(shape.note);
+      soundRef.current.playNote(shape.note, shape.shapeType);
       addParticles(spawnSquashPoof(shape.x, shape.y, shape.color));
     }
   };
@@ -510,7 +510,7 @@ export default function DoodleCanvas({ rng, sound }) {
         tuningRef.current.driftMin,
         tuningRef.current.driftMax,
       );
-      soundRef.current.playNote(shape.note);
+      soundRef.current.playNote(shape.note, shape.shapeType);
     } else {
       // Draw mode: a tap (no movement) draws a dot — a stroke whose two
       // points share the same spot, rendered as a filled circle by the
