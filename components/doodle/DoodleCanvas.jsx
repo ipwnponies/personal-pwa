@@ -1,4 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback, useEffect, useRef, useState,
+} from 'react';
 import PropTypes from 'prop-types';
 import { useDoodleObjects } from '../../lib/useDoodleObjects';
 import { createDoodleSound } from '../../lib/doodleSound';
@@ -70,7 +72,8 @@ const DEFAULT_TUNING = {
 
 export default function DoodleCanvas({ rng, sound }) {
   const {
-    objects, spawnShape, startStroke, appendStrokePoint, moveShape, throwShape, transformShape, popShape, advance, clear,
+    objects, spawnShape, startStroke, appendStrokePoint, moveShape, throwShape, transformShape,
+    popShape, advance, clear, restore,
   } = useDoodleObjects(rng);
 
   const svgRef = useRef(null);
@@ -124,6 +127,11 @@ export default function DoodleCanvas({ rng, sound }) {
   const tuningRef = useRef(tuning);
   tuningRef.current = tuning;
   const [tuningPanelOpen, setTuningPanelOpen] = useState(false);
+
+  // Undo toast for the trash button: clear(kind) returns the objects it just
+  // removed, and restore(removed) puts them back — see lib/useDoodleObjects.js.
+  const [undoToast, setUndoToast] = useState(null);
+  const undoTimerRef = useRef(null);
 
   // Load + persist the mute preference (separate from canvas content).
   useEffect(() => {
@@ -320,6 +328,32 @@ export default function DoodleCanvas({ rng, sound }) {
     pointersRef.current.clear();
     pinchesRef.current.clear();
   }, []);
+
+  useEffect(() => () => clearTimeout(undoTimerRef.current), []);
+
+  const showUndoToast = useCallback((message, onUndo) => {
+    clearTimeout(undoTimerRef.current);
+    setUndoToast({ message, onUndo });
+    undoTimerRef.current = setTimeout(() => setUndoToast(null), 5000);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (!undoToast) return;
+    clearTimeout(undoTimerRef.current);
+    undoToast.onUndo();
+    setUndoToast(null);
+  }, [undoToast]);
+
+  // Mode-scoped clear: clear(kind) returns exactly what it removed, so the
+  // undo toast only ever offers back what this tap actually took away — a
+  // shape-mode clear never resurrects strokes, and vice versa.
+  const handleClear = useCallback(() => {
+    const kind = mode === 'shape' ? 'shape' : 'stroke';
+    const removed = clear(kind);
+    if (removed.length === 0) return;
+    const message = mode === 'shape' ? 'Shapes cleared' : 'Doodles cleared';
+    showUndoToast(message, () => restore(removed));
+  }, [mode, clear, restore, showUndoToast]);
 
   const toLocal = (e) => {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -626,7 +660,7 @@ export default function DoodleCanvas({ rng, sound }) {
           type="button"
           className={styles.toolButton}
           aria-label={mode === 'shape' ? 'Clear shapes' : 'Clear doodles'}
-          onClick={() => clear(mode === 'shape' ? 'shape' : 'stroke')}
+          onClick={handleClear}
         >
           🗑️
         </button>
@@ -672,6 +706,14 @@ export default function DoodleCanvas({ rng, sound }) {
           onReset={handleTuningReset}
           onClose={() => setTuningPanelOpen(false)}
         />
+      )}
+      {undoToast && (
+        <div className={styles.undoToast} role="status">
+          <span>{undoToast.message}</span>
+          <button type="button" className={styles.undoButton} onClick={handleUndo}>
+            ↩️ Undo
+          </button>
+        </div>
       )}
     </div>
   );

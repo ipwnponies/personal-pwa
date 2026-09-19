@@ -204,6 +204,90 @@ describe('useDoodleObjects', () => {
     expect(result.current.objects[0].kind).toBe('shape');
   });
 
+  it('clear() returns the full previous objects array', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    let shape;
+    let strokeId;
+    act(() => { shape = result.current.spawnShape(0, 0); });
+    act(() => { strokeId = result.current.startStroke(1, 1); });
+    let removed;
+    act(() => { removed = result.current.clear(); });
+    expect(removed).toHaveLength(2);
+    expect(removed.map((o) => o.id).sort()).toEqual([shape.id, strokeId].sort());
+  });
+
+  it("clear('shape') returns only the removed shape objects", () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(0, 0); });
+    act(() => { result.current.startStroke(1, 1); });
+    let removed;
+    act(() => { removed = result.current.clear('shape'); });
+    expect(removed).toHaveLength(1);
+    expect(removed[0].id).toBe(shape.id);
+    expect(removed[0].kind).toBe('shape');
+  });
+
+  it("clear('stroke') returns only the removed stroke objects", () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    act(() => { result.current.spawnShape(0, 0); });
+    let strokeId;
+    act(() => { strokeId = result.current.startStroke(1, 1); });
+    let removed;
+    act(() => { removed = result.current.clear('stroke'); });
+    expect(removed).toHaveLength(1);
+    expect(removed[0].id).toBe(strokeId);
+    expect(removed[0].kind).toBe('stroke');
+  });
+
+  it('clear() on an empty hook returns an empty array', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    let removed;
+    act(() => { removed = result.current.clear(); });
+    expect(removed).toEqual([]);
+  });
+
+  it('restore appends removed objects to whatever is currently in state', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    act(() => { result.current.spawnShape(0, 0); });
+    let removed;
+    act(() => { removed = result.current.clear(); });
+    let newShape;
+    act(() => { newShape = result.current.spawnShape(5, 5); });
+    act(() => result.current.restore(removed));
+    expect(result.current.objects).toHaveLength(2);
+    const ids = result.current.objects.map((o) => o.id);
+    expect(ids).toContain(newShape.id);
+    expect(ids).toContain(removed[0].id);
+  });
+
+  it('restore writes the merged array to localStorage synchronously', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    act(() => { result.current.spawnShape(0, 0); });
+    let removed;
+    act(() => { removed = result.current.clear(); });
+    act(() => { result.current.spawnShape(5, 5); });
+    act(() => result.current.restore(removed));
+    const stored = JSON.parse(localStorage.getItem('doodle-objects'));
+    expect(stored).toHaveLength(2);
+  });
+
+  it('restore(null) is a safe no-op', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    act(() => { result.current.spawnShape(0, 0); });
+    const before = result.current.objects;
+    act(() => result.current.restore(null));
+    expect(result.current.objects).toEqual(before);
+  });
+
+  it('restore([]) is a safe no-op', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    act(() => { result.current.spawnShape(0, 0); });
+    const before = result.current.objects;
+    act(() => result.current.restore([]));
+    expect(result.current.objects).toEqual(before);
+  });
+
   it('persists to localStorage and restores on a fresh hook (debounced)', () => {
     vi.useFakeTimers();
     const first = renderHook(() => useDoodleObjects(seq([0.2])));
