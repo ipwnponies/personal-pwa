@@ -247,4 +247,25 @@ describe('useDoodleObjects', () => {
     vi.useRealTimers();
     spy.mockRestore();
   });
+
+  it('throwShape replaces a shape velocity without moving it', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(50, 60); });
+    act(() => result.current.throwShape(shape.id, 400, -200));
+    const thrown = result.current.objects.find((o) => o.id === shape.id);
+    expect(thrown.vx).toBe(400);
+    expect(thrown.vy).toBe(-200);
+    expect(thrown.x).toBe(50);
+    expect(thrown.y).toBe(60);
+  });
+
+  it('throwShape ignores strokes', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    let id;
+    act(() => { id = result.current.startStroke(0, 0); });
+    act(() => result.current.throwShape(id, 400, 400));
+    const stroke = result.current.objects.find((o) => o.id === id);
+    expect(stroke.vx).toBeUndefined();
+  });
 });

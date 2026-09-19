@@ -3,7 +3,9 @@ import PropTypes from 'prop-types';
 import { useDoodleObjects } from '../../lib/useDoodleObjects';
 import { createDoodleSound } from '../../lib/doodleSound';
 import { clamp } from '../../lib/random';
-import { MIN_SIZE, MAX_SIZE } from '../../lib/doodleShapes';
+import {
+  MIN_SIZE, MAX_SIZE, DEFAULT_MAX_THROW_SPEED, THROW_SAMPLE_WINDOW_MS, throwVelocity,
+} from '../../lib/doodleShapes';
 import {
   spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles, COLLISION_BURST_MAX_AGE,
   DEFAULT_MAX_PARTICLES, DEFAULT_DUST_MAX_AGE,
@@ -55,11 +57,12 @@ const DEFAULT_TUNING = {
   dustFrameInterval: 30,
   driftMin: 20,
   driftMax: 100,
+  maxThrowSpeed: DEFAULT_MAX_THROW_SPEED,
 };
 
 export default function DoodleCanvas({ rng, sound }) {
   const {
-    objects, spawnShape, startStroke, appendStrokePoint, moveShape, transformShape, popShape, advance, clear,
+    objects, spawnShape, startStroke, appendStrokePoint, moveShape, throwShape, transformShape, popShape, advance, clear,
   } = useDoodleObjects(rng);
 
   const svgRef = useRef(null);
@@ -290,6 +293,7 @@ export default function DoodleCanvas({ rng, sound }) {
       other.moved = true;
       other.startX = other.x;
       other.startY = other.y;
+      other.samples = [];
     }
   };
 
@@ -351,7 +355,7 @@ export default function DoodleCanvas({ rng, sound }) {
 
     if (shapeId && shapeIsClaimed(shapeId)) {
       pointersRef.current.set(e.pointerId, {
-        pointerId: e.pointerId, mode: 'inert', shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now,
+        pointerId: e.pointerId, mode: 'inert', shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now, samples: [],
       });
       return;
     }
@@ -394,13 +398,13 @@ export default function DoodleCanvas({ rng, sound }) {
       partner.mode = 'pinch-member';
       partner.moved = true;
       pointersRef.current.set(e.pointerId, {
-        pointerId: e.pointerId, mode: 'pinch-member', shapeId: pinchShapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now,
+        pointerId: e.pointerId, mode: 'pinch-member', shapeId: pinchShapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now, samples: [],
       });
       return;
     }
 
     pointersRef.current.set(e.pointerId, {
-      pointerId: e.pointerId, mode: null, shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: false, strokeId: null, downTime: now,
+      pointerId: e.pointerId, mode: null, shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: false, strokeId: null, downTime: now, samples: [],
     });
   };
 
@@ -458,8 +462,14 @@ export default function DoodleCanvas({ rng, sound }) {
         return;
       }
     }
-    if (p.mode === 'drag') moveShape(p.shapeId, pt.x, pt.y);
-    else if (p.mode === 'draw') appendStrokePoint(p.strokeId, pt.x, pt.y);
+    if (p.mode === 'drag') {
+      // Sample the drag so pointerup can derive a release velocity. Trimmed
+      // to the window on every move so the buffer stays ~6 entries at 60Hz.
+      const t = Date.now();
+      p.samples = p.samples.filter((s) => t - s.t <= THROW_SAMPLE_WINDOW_MS);
+      p.samples.push({ x: pt.x, y: pt.y, t });
+      moveShape(p.shapeId, pt.x, pt.y);
+    } else if (p.mode === 'draw') appendStrokePoint(p.strokeId, pt.x, pt.y);
   };
 
   const onPointerUp = (e) => {
@@ -471,6 +481,20 @@ export default function DoodleCanvas({ rng, sound }) {
 
     if (p.mode === 'pinch-member') {
       endPinchMember(p, e.pointerId);
+      return;
+    }
+
+    if (p.mode === 'drag') {
+      // An empty samples buffer means no throwing gesture ever happened —
+      // e.g. a pinch member promoted straight to drag (see endPinchMember)
+      // and lifted before any pointermove. Leave the shape's existing
+      // velocity (its ambient drift) alone rather than reading this as "held
+      // still, throw at zero speed" and parking it. A real drag always has
+      // at least one sample from onPointerMove, so this only catches the
+      // pinch-handoff case.
+      if (p.samples.length === 0) return;
+      const { vx, vy } = throwVelocity(p.samples, Date.now(), tuningRef.current.maxThrowSpeed);
+      throwShape(p.shapeId, vx, vy);
       return;
     }
 
@@ -507,6 +531,11 @@ export default function DoodleCanvas({ rng, sound }) {
     if (!p) return;
     pointersRef.current.delete(e.pointerId);
     if (p.mode === 'pinch-member') endPinchMember(p, e.pointerId);
+    // Same empty-samples guard as onPointerUp: a pinch survivor promoted to
+    // 'drag' with samples reset to [] (see endPinchMember) that gets
+    // cancelled before any pointermove never actually dragged, so leave its
+    // existing drift velocity alone instead of zeroing it.
+    else if (p.mode === 'drag' && p.samples.length > 0) throwShape(p.shapeId, 0, 0);
   };
 
   return (

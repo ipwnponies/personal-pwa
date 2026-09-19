@@ -1029,4 +1029,148 @@ describe('DoodleCanvas', () => {
     nowSpy.mockRestore();
     rectSpy.mockRestore();
   });
+
+  const persistedShape = () => {
+    act(() => { vi.advanceTimersByTime(1000); }); // flush the persistence interval
+    return JSON.parse(localStorage.getItem('doodle-objects')).find((o) => o.kind === 'shape');
+  };
+
+  // Spawns one shape, then drags it along `path`: pointerdown on the shape
+  // group, moves on the stage — the pattern the existing drag tests use. A
+  // pointerdown on the svg itself has no [data-id] ancestor, so it would
+  // become an inert empty-canvas drag, never a shape drag. Each move sets the
+  // fake clock so the drag samples carry distinct timestamps.
+  const spawnAndDrag = (container, path) => {
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    path.forEach(({ x, y, t }) => {
+      vi.setSystemTime(t);
+      fireEvent.pointerMove(svg, { clientX: x, clientY: y, pointerId: 2 });
+    });
+    return svg;
+  };
+
+  it('a flick release throws the shape along the flick direction', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    // First move clears MOVE_THRESHOLD (8px) so the pointer becomes a drag;
+    // then 60px in 30ms = 2000px/s raw, clamped down to maxThrowSpeed.
+    const svg = spawnAndDrag(container, [
+      { x: 140, y: 100, t: 100 },
+      { x: 170, y: 100, t: 120 },
+      { x: 200, y: 100, t: 130 },
+    ]);
+    vi.setSystemTime(135);
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 100, pointerId: 2 });
+
+    const shape = persistedShape();
+    expect(shape.vx).toBeGreaterThan(0);
+    expect(shape.vy).toBeCloseTo(0);
+    expect(Math.hypot(shape.vx, shape.vy)).toBeCloseTo(600); // DEFAULT_MAX_THROW_SPEED
+    vi.useRealTimers();
+  });
+
+  it('a release after the finger stops moving parks the shape', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = spawnAndDrag(container, [
+      { x: 140, y: 100, t: 100 },
+      { x: 200, y: 100, t: 130 },
+    ]);
+    // Finger held still for 400ms: no pointermove fires, so every sample ages
+    // out of the window that ends at the release.
+    vi.setSystemTime(530);
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 100, pointerId: 2 });
+
+    const shape = persistedShape();
+    expect(shape.vx).toBe(0);
+    expect(shape.vy).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('pointercancel parks the shape instead of throwing it', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = spawnAndDrag(container, [
+      { x: 140, y: 100, t: 100 },
+      { x: 200, y: 100, t: 130 },
+    ]);
+    vi.setSystemTime(135);
+    fireEvent.pointerCancel(svg, { clientX: 200, clientY: 100, pointerId: 2 });
+
+    const shape = persistedShape();
+    expect(shape.vx).toBe(0);
+    expect(shape.vy).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('ending a pinch with no intervening move leaves the shape\'s drift velocity untouched', () => {
+    // Regression: endPinchMember promotes the pinch survivor to 'drag' with a
+    // fresh, empty samples buffer (the fix for a crash on release). Releasing
+    // that pointer immediately — no pointermove in between — must NOT be
+    // read as "held still, throw at zero speed": that would silently
+    // overwrite the shape's pre-pinch ambient drift with (0, 0), even though
+    // the user never made a throwing gesture.
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const before = persistedShape();
+
+    fireEvent.pointerDown(g, { clientX: 190, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(g, { clientX: 210, clientY: 200, pointerId: 11 });
+    fireEvent.pointerMove(svg, { clientX: 170, clientY: 200, pointerId: 10 }); // actually pinch-resize it
+    fireEvent.pointerMove(svg, { clientX: 230, clientY: 200, pointerId: 11 });
+
+    fireEvent.pointerUp(svg, { clientX: 170, clientY: 200, pointerId: 10 }); // one finger lifts: ends the pinch,
+    // promoting pointer 11 to 'drag' with samples reset to [].
+    fireEvent.pointerUp(svg, { clientX: 230, clientY: 200, pointerId: 11 }); // survivor lifts with NO intervening
+    // pointermove, so its samples buffer is still empty.
+
+    const after = persistedShape();
+    expect(after.vx).toBe(before.vx);
+    expect(after.vy).toBe(before.vy);
+    vi.useRealTimers();
+  });
+
+  it('ending a pinch with pointercancel instead of pointerup also leaves drift velocity untouched', () => {
+    // Same regression as the pointerup version above, but via pointercancel:
+    // onPointerCancel's 'drag' branch used to call throwShape(id, 0, 0)
+    // unconditionally, even when the promoted pinch survivor's samples
+    // buffer was still empty (no intervening pointermove) — e.g. palm
+    // rejection cancelling the survivor's pointer right after the handoff.
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const before = persistedShape();
+
+    fireEvent.pointerDown(g, { clientX: 190, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(g, { clientX: 210, clientY: 200, pointerId: 11 });
+    fireEvent.pointerMove(svg, { clientX: 170, clientY: 200, pointerId: 10 }); // actually pinch-resize it
+    fireEvent.pointerMove(svg, { clientX: 230, clientY: 200, pointerId: 11 });
+
+    fireEvent.pointerUp(svg, { clientX: 170, clientY: 200, pointerId: 10 }); // one finger lifts: ends the pinch,
+    // promoting pointer 11 to 'drag' with samples reset to [].
+    fireEvent.pointerCancel(svg, { clientX: 230, clientY: 200, pointerId: 11 }); // survivor is CANCELLED (not
+    // released), with NO intervening pointermove, so its samples buffer is
+    // still empty.
+
+    const after = persistedShape();
+    expect(after.vx).toBe(before.vx);
+    expect(after.vy).toBe(before.vy);
+    vi.useRealTimers();
+  });
 });

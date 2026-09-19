@@ -4,7 +4,7 @@ import { render, fireEvent } from '@testing-library/react';
 import TuningPanel from './TuningPanel';
 
 const baseTuning = {
-  maxParticles: 150, dustMaxAge: 0.3, dustFrameInterval: 3, driftMin: 18, driftMax: 18,
+  maxParticles: 150, dustMaxAge: 0.3, dustFrameInterval: 3, driftMin: 18, driftMax: 18, maxThrowSpeed: 600,
 };
 
 describe('TuningPanel', () => {
@@ -17,6 +17,7 @@ describe('TuningPanel', () => {
     expect(getByLabelText('Dust every Nth frame').value).toBe('3');
     expect(getByLabelText('Drift speed min (px/s)').value).toBe('18');
     expect(getByLabelText('Drift speed max (px/s)').value).toBe('18');
+    expect(getByLabelText('Max throw speed (px/s)').value).toBe('600');
   });
 
   it('calls onChange with the field key and numeric value when an input changes', () => {
