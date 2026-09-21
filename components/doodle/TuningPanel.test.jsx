@@ -4,7 +4,15 @@ import { render, fireEvent } from '@testing-library/react';
 import TuningPanel from './TuningPanel';
 
 const baseTuning = {
-  maxParticles: 150, dustMaxAge: 0.3, dustFrameInterval: 3, driftMin: 18, driftMax: 18, maxThrowSpeed: 600,
+  maxParticles: 150,
+  dustMaxAge: 0.3,
+  dustFrameInterval: 3,
+  driftMin: 18,
+  driftMax: 18,
+  maxThrowSpeed: 600,
+  wallRestitution: 0.9,
+  stuckAfterS: 1,
+  wallImmunityS: 1.5,
 };
 
 describe('TuningPanel', () => {
@@ -18,6 +26,9 @@ describe('TuningPanel', () => {
     expect(getByLabelText('Drift speed min (px/s)').value).toBe('18');
     expect(getByLabelText('Drift speed max (px/s)').value).toBe('18');
     expect(getByLabelText('Max throw speed (px/s)').value).toBe('600');
+    expect(getByLabelText('Wall bounciness').value).toBe('0.9');
+    expect(getByLabelText('Stuck after (s)').value).toBe('1');
+    expect(getByLabelText('Wall immunity (s)').value).toBe('1.5');
   });
 
   it('calls onChange with the field key and numeric value when an input changes', () => {
