@@ -1576,6 +1576,33 @@ describe('DoodleCanvas', () => {
     expect(Math.hypot(shape.vx, shape.vy)).toBeGreaterThan(0);
     vi.useRealTimers();
   });
+  it('releasing a drag grants the shape wall immunity so it is not ejected', () => {
+    vi.useFakeTimers();
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={seq([0])} sound={mockSound()} />);
+    const svg = stage(container);
+
+    fireEvent.pointerDown(svg, { clientX: 300, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 300, clientY: 300, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const id = g.getAttribute('data-id');
+
+    fireEvent.pointerDown(g, { clientX: 300, clientY: 300, pointerId: 2 });
+    fireEvent.pointerMove(svg, { clientX: 400, clientY: 400, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 400, clientY: 400, pointerId: 2 });
+
+    act(() => { cbs[cbs.length - 1](16); });
+    act(() => { vi.advanceTimersByTime(1000); });
+
+    const saved = JSON.parse(localStorage.getItem('doodle-objects'));
+    const shape = saved.find((o) => o.id === id);
+    expect(shape.wallImmunityRemaining).toBeGreaterThan(0);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
   it('a shape drifting into a drawn stroke spawns a bounce burst', () => {
     // seq([0]) -> createShape draws [angle 0, speed, shapeType, color,
     // rotation, size, note]: angle 0 gives vx = +driftMin (20px/s, +x), size

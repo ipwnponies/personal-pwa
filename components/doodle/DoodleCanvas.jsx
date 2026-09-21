@@ -5,7 +5,9 @@ import PropTypes from 'prop-types';
 import { useDoodleObjects } from '../../lib/useDoodleObjects';
 import { createDoodleSound } from '../../lib/doodleSound';
 import { createDoodleHaptics } from '../../lib/doodleHaptics';
-import { DEFAULT_WALL_RESTITUTION } from '../../lib/doodleWalls';
+import {
+  DEFAULT_WALL_RESTITUTION, DEFAULT_STUCK_AFTER_S, DEFAULT_WALL_IMMUNITY_S,
+} from '../../lib/doodleWalls';
 import { clamp } from '../../lib/random';
 import {
   MIN_SIZE, MAX_SIZE, DEFAULT_MAX_THROW_SPEED, THROW_SAMPLE_WINDOW_MS, throwVelocity,
@@ -70,12 +72,14 @@ const DEFAULT_TUNING = {
   driftMax: 100,
   maxThrowSpeed: DEFAULT_MAX_THROW_SPEED,
   wallRestitution: DEFAULT_WALL_RESTITUTION,
+  stuckAfterS: DEFAULT_STUCK_AFTER_S,
+  wallImmunityS: DEFAULT_WALL_IMMUNITY_S,
 };
 
 export default function DoodleCanvas({ rng, sound }) {
   const {
     objects, spawnShape, startStroke, appendStrokePoint, moveShape, throwShape, transformShape,
-    popShape, advance, clear, restore,
+    popShape, releaseShape, advance, clear, restore,
   } = useDoodleObjects(rng);
 
   const svgRef = useRef(null);
@@ -304,6 +308,8 @@ export default function DoodleCanvas({ rng, sound }) {
         }
         const events = advance(dt, { width: rect.width, height: rect.height }, grabbedIds, {
           wallRestitution: tuningRef.current.wallRestitution,
+          stuckAfterS: tuningRef.current.stuckAfterS,
+          wallImmunityS: tuningRef.current.wallImmunityS,
         });
         events.forEach((event) => {
           if (event.type === 'bounce' || event.type === 'wallBounce') {
@@ -576,6 +582,14 @@ export default function DoodleCanvas({ rng, sound }) {
 
     if (p.mode === 'inert') return;
 
+    // A shape released from a drag or pinch may be sitting on top of a line.
+    // Immunity lets it drift out under its own drift instead of being ejected.
+    // A pinch's surviving pointer continues as a drag and grants again when it
+    // finally lifts; re-granting is harmless.
+    if (p.mode === 'drag' || p.mode === 'pinch-member') {
+      releaseShape(p.shapeId, tuningRef.current.wallImmunityS);
+    }
+
     if (p.mode === 'pinch-member') {
       endPinchMember(p, e.pointerId);
       return;
@@ -627,6 +641,9 @@ export default function DoodleCanvas({ rng, sound }) {
     const p = pointersRef.current.get(e.pointerId);
     if (!p) return;
     pointersRef.current.delete(e.pointerId);
+    if (p.mode === 'drag' || p.mode === 'pinch-member') {
+      releaseShape(p.shapeId, tuningRef.current.wallImmunityS);
+    }
     if (p.mode === 'pinch-member') endPinchMember(p, e.pointerId);
     // Same empty-samples guard as onPointerUp: a pinch survivor promoted to
     // 'drag' with samples reset to [] (see endPinchMember) that gets

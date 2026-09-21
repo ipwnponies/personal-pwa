@@ -25,6 +25,12 @@ const FIELDS = [
   {
     key: 'wallRestitution', label: 'Wall bounciness', min: 0, max: 1, step: 0.05,
   },
+  {
+    key: 'stuckAfterS', label: 'Stuck after (s)', min: 0.5, max: 10, step: 0.5,
+  },
+  {
+    key: 'wallImmunityS', label: 'Wall immunity (s)', min: 0.5, max: 10, step: 0.5,
+  },
 ];
 
 export default function TuningPanel({
@@ -75,6 +81,8 @@ TuningPanel.propTypes = {
     driftMax: PropTypes.number.isRequired,
     maxThrowSpeed: PropTypes.number.isRequired,
     wallRestitution: PropTypes.number.isRequired,
+    stuckAfterS: PropTypes.number.isRequired,
+    wallImmunityS: PropTypes.number.isRequired,
   }).isRequired,
   onChange: PropTypes.func.isRequired,
   onReset: PropTypes.func.isRequired,
