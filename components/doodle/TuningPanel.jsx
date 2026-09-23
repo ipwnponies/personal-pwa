@@ -19,6 +19,9 @@ const FIELDS = [
   {
     key: 'driftMax', label: 'Drift speed max (px/s)', min: 0, max: 200, step: 1,
   },
+  {
+    key: 'maxThrowSpeed', label: 'Max throw speed (px/s)', min: 0, max: 3000, step: 50,
+  },
 ];
 
 export default function TuningPanel({
@@ -67,6 +70,7 @@ TuningPanel.propTypes = {
     dustFrameInterval: PropTypes.number.isRequired,
     driftMin: PropTypes.number.isRequired,
     driftMax: PropTypes.number.isRequired,
+    maxThrowSpeed: PropTypes.number.isRequired,
   }).isRequired,
   onChange: PropTypes.func.isRequired,
   onReset: PropTypes.func.isRequired,

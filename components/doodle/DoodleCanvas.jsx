@@ -2,8 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useDoodleObjects } from '../../lib/useDoodleObjects';
 import { createDoodleSound } from '../../lib/doodleSound';
+import { createDoodleHaptics } from '../../lib/doodleHaptics';
 import { clamp } from '../../lib/random';
-import { MIN_SIZE, MAX_SIZE } from '../../lib/doodleShapes';
+import {
+  MIN_SIZE, MAX_SIZE, DEFAULT_MAX_THROW_SPEED, THROW_SAMPLE_WINDOW_MS, throwVelocity,
+} from '../../lib/doodleShapes';
 import {
   spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles, COLLISION_BURST_MAX_AGE,
   DEFAULT_MAX_PARTICLES, DEFAULT_DUST_MAX_AGE,
@@ -21,6 +24,13 @@ const MUTE_KEY = 'doodle-muted';
 const TRAILS_KEY = 'doodle-trails';
 const MODE_KEY = 'doodle-mode';
 const TUNING_KEY = 'doodle-tuning';
+const TIME_SCALE_KEY = 'doodle-time-scale';
+// Multipliers applied to the frame delta, cycled by the toolbar button.
+const TIME_SCALES = [1, 0.25, 0];
+// Keyed by the current scale; like the mode and mute buttons, the label names
+// what a click does next, not the current state.
+const TIME_SCALE_LABELS = { 1: 'Slow motion', 0.25: 'Freeze', 0: 'Normal speed' };
+const TIME_SCALE_ICONS = { 1: '▶️', 0.25: '🐢', 0: '⏸️' };
 const MAX_DT = 0.05; // clamp frame delta so a backgrounded tab doesn't jump
 const MAX_POINTERS = 10; // defensive ceiling, not a gameplay limit
 const PINCH_WINDOW_MS = 150; // two touches must land within this of each other to start a pinch
@@ -55,16 +65,20 @@ const DEFAULT_TUNING = {
   dustFrameInterval: 30,
   driftMin: 20,
   driftMax: 100,
+  maxThrowSpeed: DEFAULT_MAX_THROW_SPEED,
 };
 
 export default function DoodleCanvas({ rng, sound }) {
   const {
-    objects, spawnShape, startStroke, appendStrokePoint, moveShape, transformShape, popShape, advance, clear,
+    objects, spawnShape, startStroke, appendStrokePoint, moveShape, throwShape, transformShape, popShape, advance, clear,
   } = useDoodleObjects(rng);
 
   const svgRef = useRef(null);
   const soundRef = useRef(null);
   if (soundRef.current === null) soundRef.current = sound || createDoodleSound();
+
+  const hapticsRef = useRef(null);
+  if (hapticsRef.current === null) hapticsRef.current = createDoodleHaptics();
 
   // Read once at mount rather than reactively — kids aren't expected to
   // resize or rotate the window mid-play.
@@ -97,6 +111,9 @@ export default function DoodleCanvas({ rng, sound }) {
   // fighting each other (a drag meant to nudge a half-built shape no longer
   // leaves behind a stray doodle).
   const [mode, setMode] = useState('shape');
+  const [timeScale, setTimeScale] = useState(1);
+  const timeScaleRef = useRef(timeScale);
+  timeScaleRef.current = timeScale;
 
   const trailsEnabledRef = useRef(trailsEnabled);
   trailsEnabledRef.current = trailsEnabled;
@@ -118,6 +135,7 @@ export default function DoodleCanvas({ rng, sound }) {
   }, []);
   useEffect(() => {
     soundRef.current.setMuted(muted);
+    hapticsRef.current.setMuted(muted);
     try {
       localStorage.setItem(MUTE_KEY, String(muted));
     } catch {
@@ -180,6 +198,25 @@ export default function DoodleCanvas({ rng, sound }) {
     }
   }, [tuning]);
 
+  // Load + persist the slow-motion choice. A stored freeze (0) is coerced
+  // back to 1: the app must never open frozen, because a kid cannot work out
+  // why nothing moves.
+  useEffect(() => {
+    try {
+      const stored = Number(localStorage.getItem(TIME_SCALE_KEY));
+      if (TIME_SCALES.includes(stored) && stored !== 0) setTimeScale(stored);
+    } catch {
+      // ignore — default to normal speed
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(TIME_SCALE_KEY, String(timeScale));
+    } catch {
+      // ignore — preference just won't persist
+    }
+  }, [timeScale]);
+
   const handleTuningChange = (key, value) => {
     if (!Number.isFinite(value)) return;
     setTuning((t) => ({ ...t, [key]: value }));
@@ -196,8 +233,30 @@ export default function DoodleCanvas({ rng, sound }) {
     // fixed-size particle buffer.
     let frameCount = 0;
     const tick = (now) => {
-      const dt = Math.min((now - last) / 1000, MAX_DT);
+      const rawDt = Math.min((now - last) / 1000, MAX_DT);
       last = now;
+      // A frozen canvas skips the whole body rather than advancing with a
+      // zero delta. Two parts of this loop are not dt-driven, so dt === 0
+      // does not actually freeze anything: resolveCollisions is purely
+      // positional, so already-overlapping shapes keep merging and
+      // position-correcting; and dust spawning is gated on vx/vy, which a
+      // zero delta never changes, while advanceParticles(p, 0) ages nothing
+      // and its age < maxAge filter drops nothing — so particles pile up to
+      // maxParticles and never expire. `last` is still updated above, or
+      // unfreezing would feed one huge delta.
+      if (timeScaleRef.current === 0) {
+        // advanceParticles is the only place maxParticles gets enforced, and
+        // it's skipped for the rest of this branch — but addParticles (tap
+        // squash/burst) is still reachable while frozen, so particles would
+        // otherwise grow unbounded for as long as the freeze lasts.
+        const { maxParticles } = tuningRef.current;
+        if (particlesRef.current.length > maxParticles) {
+          particlesRef.current = particlesRef.current.slice(-maxParticles);
+        }
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      const dt = rawDt * timeScaleRef.current;
       particlesRef.current = advanceParticles(particlesRef.current, dt, tuningRef.current.maxParticles);
       const rect = svgRef.current?.getBoundingClientRect();
       if (rect && rect.width && rect.height) {
@@ -237,9 +296,11 @@ export default function DoodleCanvas({ rng, sound }) {
         events.forEach((event) => {
           if (event.type === 'bounce') {
             addParticles(spawnBurst(event.x, event.y, event.color, event.normal, COLLISION_BURST_MAX_AGE));
+            hapticsRef.current.vibrate('bounce');
           } else if (event.type === 'merge') {
             addParticles(spawnSpiral(event.fromX, event.fromY, event.x, event.y, event.color));
-            soundRef.current.playNote(event.note);
+            soundRef.current.playNote(event.note, event.shapeType);
+            hapticsRef.current.vibrate('merge');
           }
         });
       }
@@ -290,6 +351,7 @@ export default function DoodleCanvas({ rng, sound }) {
       other.moved = true;
       other.startX = other.x;
       other.startY = other.y;
+      other.samples = [];
     }
   };
 
@@ -321,6 +383,7 @@ export default function DoodleCanvas({ rng, sound }) {
       lastTapRef.current.delete(id);
       popShape(id, tuningRef.current.driftMin, tuningRef.current.driftMax);
       soundRef.current.playPop();
+      hapticsRef.current.vibrate('pop');
       if (shape) {
         addParticles(spawnBurst(shape.x, shape.y, shape.color));
       }
@@ -334,7 +397,7 @@ export default function DoodleCanvas({ rng, sound }) {
     });
     triggerPulse(id);
     if (shape) {
-      soundRef.current.playNote(shape.note);
+      soundRef.current.playNote(shape.note, shape.shapeType);
       addParticles(spawnSquashPoof(shape.x, shape.y, shape.color));
     }
   };
@@ -351,7 +414,7 @@ export default function DoodleCanvas({ rng, sound }) {
 
     if (shapeId && shapeIsClaimed(shapeId)) {
       pointersRef.current.set(e.pointerId, {
-        pointerId: e.pointerId, mode: 'inert', shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now,
+        pointerId: e.pointerId, mode: 'inert', shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now, samples: [],
       });
       return;
     }
@@ -394,13 +457,13 @@ export default function DoodleCanvas({ rng, sound }) {
       partner.mode = 'pinch-member';
       partner.moved = true;
       pointersRef.current.set(e.pointerId, {
-        pointerId: e.pointerId, mode: 'pinch-member', shapeId: pinchShapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now,
+        pointerId: e.pointerId, mode: 'pinch-member', shapeId: pinchShapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: true, strokeId: null, downTime: now, samples: [],
       });
       return;
     }
 
     pointersRef.current.set(e.pointerId, {
-      pointerId: e.pointerId, mode: null, shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: false, strokeId: null, downTime: now,
+      pointerId: e.pointerId, mode: null, shapeId, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, moved: false, strokeId: null, downTime: now, samples: [],
     });
   };
 
@@ -458,8 +521,14 @@ export default function DoodleCanvas({ rng, sound }) {
         return;
       }
     }
-    if (p.mode === 'drag') moveShape(p.shapeId, pt.x, pt.y);
-    else if (p.mode === 'draw') appendStrokePoint(p.strokeId, pt.x, pt.y);
+    if (p.mode === 'drag') {
+      // Sample the drag so pointerup can derive a release velocity. Trimmed
+      // to the window on every move so the buffer stays ~6 entries at 60Hz.
+      const t = Date.now();
+      p.samples = p.samples.filter((s) => t - s.t <= THROW_SAMPLE_WINDOW_MS);
+      p.samples.push({ x: pt.x, y: pt.y, t });
+      moveShape(p.shapeId, pt.x, pt.y);
+    } else if (p.mode === 'draw') appendStrokePoint(p.strokeId, pt.x, pt.y);
   };
 
   const onPointerUp = (e) => {
@@ -471,6 +540,20 @@ export default function DoodleCanvas({ rng, sound }) {
 
     if (p.mode === 'pinch-member') {
       endPinchMember(p, e.pointerId);
+      return;
+    }
+
+    if (p.mode === 'drag') {
+      // An empty samples buffer means no throwing gesture ever happened —
+      // e.g. a pinch member promoted straight to drag (see endPinchMember)
+      // and lifted before any pointermove. Leave the shape's existing
+      // velocity (its ambient drift) alone rather than reading this as "held
+      // still, throw at zero speed" and parking it. A real drag always has
+      // at least one sample from onPointerMove, so this only catches the
+      // pinch-handoff case.
+      if (p.samples.length === 0) return;
+      const { vx, vy } = throwVelocity(p.samples, Date.now(), tuningRef.current.maxThrowSpeed);
+      throwShape(p.shapeId, vx, vy);
       return;
     }
 
@@ -486,7 +569,7 @@ export default function DoodleCanvas({ rng, sound }) {
         tuningRef.current.driftMin,
         tuningRef.current.driftMax,
       );
-      soundRef.current.playNote(shape.note);
+      soundRef.current.playNote(shape.note, shape.shapeType);
     } else {
       // Draw mode: a tap (no movement) draws a dot — a stroke whose two
       // points share the same spot, rendered as a filled circle by the
@@ -507,6 +590,11 @@ export default function DoodleCanvas({ rng, sound }) {
     if (!p) return;
     pointersRef.current.delete(e.pointerId);
     if (p.mode === 'pinch-member') endPinchMember(p, e.pointerId);
+    // Same empty-samples guard as onPointerUp: a pinch survivor promoted to
+    // 'drag' with samples reset to [] (see endPinchMember) that gets
+    // cancelled before any pointermove never actually dragged, so leave its
+    // existing drift velocity alone instead of zeroing it.
+    else if (p.mode === 'drag' && p.samples.length > 0) throwShape(p.shapeId, 0, 0);
   };
 
   return (
@@ -557,6 +645,16 @@ export default function DoodleCanvas({ rng, sound }) {
           onClick={() => setTrailsEnabled((t) => !t)}
         >
           {trailsEnabled ? '💨' : '🚫'}
+        </button>
+        <button
+          type="button"
+          className={styles.toolButton}
+          aria-label={TIME_SCALE_LABELS[timeScale]}
+          onClick={() => setTimeScale(
+            (t) => TIME_SCALES[(TIME_SCALES.indexOf(t) + 1) % TIME_SCALES.length],
+          )}
+        >
+          {TIME_SCALE_ICONS[timeScale]}
         </button>
         <button
           type="button"

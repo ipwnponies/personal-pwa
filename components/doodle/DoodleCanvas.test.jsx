@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
 import DoodleCanvas from './DoodleCanvas';
 import styles from './doodle.module.css';
@@ -26,6 +26,10 @@ beforeEach(() => {
   // Freeze the drift loop so pointer behavior is isolated.
   vi.stubGlobal('requestAnimationFrame', () => 0);
   vi.stubGlobal('cancelAnimationFrame', () => {});
+});
+
+afterEach(() => {
+  delete navigator.vibrate;
 });
 
 const stage = (container) => container.querySelector('svg');
@@ -1028,5 +1032,473 @@ describe('DoodleCanvas', () => {
 
     nowSpy.mockRestore();
     rectSpy.mockRestore();
+  });
+
+  const persistedShape = () => {
+    act(() => { vi.advanceTimersByTime(1000); }); // flush the persistence interval
+    return JSON.parse(localStorage.getItem('doodle-objects')).find((o) => o.kind === 'shape');
+  };
+
+  // Spawns one shape, then drags it along `path`: pointerdown on the shape
+  // group, moves on the stage — the pattern the existing drag tests use. A
+  // pointerdown on the svg itself has no [data-id] ancestor, so it would
+  // become an inert empty-canvas drag, never a shape drag. Each move sets the
+  // fake clock so the drag samples carry distinct timestamps.
+  const spawnAndDrag = (container, path) => {
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    path.forEach(({ x, y, t }) => {
+      vi.setSystemTime(t);
+      fireEvent.pointerMove(svg, { clientX: x, clientY: y, pointerId: 2 });
+    });
+    return svg;
+  };
+
+  it('a flick release throws the shape along the flick direction', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    // First move clears MOVE_THRESHOLD (8px) so the pointer becomes a drag;
+    // then 60px in 30ms = 2000px/s raw, clamped down to maxThrowSpeed.
+    const svg = spawnAndDrag(container, [
+      { x: 140, y: 100, t: 100 },
+      { x: 170, y: 100, t: 120 },
+      { x: 200, y: 100, t: 130 },
+    ]);
+    vi.setSystemTime(135);
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 100, pointerId: 2 });
+
+    const shape = persistedShape();
+    expect(shape.vx).toBeGreaterThan(0);
+    expect(shape.vy).toBeCloseTo(0);
+    expect(Math.hypot(shape.vx, shape.vy)).toBeCloseTo(600); // DEFAULT_MAX_THROW_SPEED
+    vi.useRealTimers();
+  });
+
+  it('a release after the finger stops moving parks the shape', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = spawnAndDrag(container, [
+      { x: 140, y: 100, t: 100 },
+      { x: 200, y: 100, t: 130 },
+    ]);
+    // Finger held still for 400ms: no pointermove fires, so every sample ages
+    // out of the window that ends at the release.
+    vi.setSystemTime(530);
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 100, pointerId: 2 });
+
+    const shape = persistedShape();
+    expect(shape.vx).toBe(0);
+    expect(shape.vy).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('pointercancel parks the shape instead of throwing it', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = spawnAndDrag(container, [
+      { x: 140, y: 100, t: 100 },
+      { x: 200, y: 100, t: 130 },
+    ]);
+    vi.setSystemTime(135);
+    fireEvent.pointerCancel(svg, { clientX: 200, clientY: 100, pointerId: 2 });
+
+    const shape = persistedShape();
+    expect(shape.vx).toBe(0);
+    expect(shape.vy).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('ending a pinch with no intervening move leaves the shape\'s drift velocity untouched', () => {
+    // Regression: endPinchMember promotes the pinch survivor to 'drag' with a
+    // fresh, empty samples buffer (the fix for a crash on release). Releasing
+    // that pointer immediately — no pointermove in between — must NOT be
+    // read as "held still, throw at zero speed": that would silently
+    // overwrite the shape's pre-pinch ambient drift with (0, 0), even though
+    // the user never made a throwing gesture.
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const before = persistedShape();
+
+    fireEvent.pointerDown(g, { clientX: 190, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(g, { clientX: 210, clientY: 200, pointerId: 11 });
+    fireEvent.pointerMove(svg, { clientX: 170, clientY: 200, pointerId: 10 }); // actually pinch-resize it
+    fireEvent.pointerMove(svg, { clientX: 230, clientY: 200, pointerId: 11 });
+
+    fireEvent.pointerUp(svg, { clientX: 170, clientY: 200, pointerId: 10 }); // one finger lifts: ends the pinch,
+    // promoting pointer 11 to 'drag' with samples reset to [].
+    fireEvent.pointerUp(svg, { clientX: 230, clientY: 200, pointerId: 11 }); // survivor lifts with NO intervening
+    // pointermove, so its samples buffer is still empty.
+
+    const after = persistedShape();
+    expect(after.vx).toBe(before.vx);
+    expect(after.vy).toBe(before.vy);
+    vi.useRealTimers();
+  });
+
+  it('ending a pinch with pointercancel instead of pointerup also leaves drift velocity untouched', () => {
+    // Same regression as the pointerup version above, but via pointercancel:
+    // onPointerCancel's 'drag' branch used to call throwShape(id, 0, 0)
+    // unconditionally, even when the promoted pinch survivor's samples
+    // buffer was still empty (no intervening pointermove) — e.g. palm
+    // rejection cancelling the survivor's pointer right after the handoff.
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container } = render(<DoodleCanvas rng={seq([0.1])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    const before = persistedShape();
+
+    fireEvent.pointerDown(g, { clientX: 190, clientY: 200, pointerId: 10 });
+    fireEvent.pointerDown(g, { clientX: 210, clientY: 200, pointerId: 11 });
+    fireEvent.pointerMove(svg, { clientX: 170, clientY: 200, pointerId: 10 }); // actually pinch-resize it
+    fireEvent.pointerMove(svg, { clientX: 230, clientY: 200, pointerId: 11 });
+
+    fireEvent.pointerUp(svg, { clientX: 170, clientY: 200, pointerId: 10 }); // one finger lifts: ends the pinch,
+    // promoting pointer 11 to 'drag' with samples reset to [].
+    fireEvent.pointerCancel(svg, { clientX: 230, clientY: 200, pointerId: 11 }); // survivor is CANCELLED (not
+    // released), with NO intervening pointermove, so its samples buffer is
+    // still empty.
+
+    const after = persistedShape();
+    expect(after.vx).toBe(before.vx);
+    expect(after.vy).toBe(before.vy);
+    vi.useRealTimers();
+  });
+
+  it('passes the shape type to playNote on spawn and on tap', () => {
+    const sound = mockSound();
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+
+    const [, spawnType] = sound.playNote.mock.calls[0];
+    expect(['circle', 'square', 'triangle', 'star']).toContain(spawnType);
+
+    // Tap the shape itself: a pointerdown on the svg has no [data-id]
+    // ancestor and would spawn a second shape instead of tapping this one.
+    sound.playNote.mockClear();
+    const g = container.querySelector('svg > g[data-id]');
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    const [, tapType] = sound.playNote.mock.calls[0];
+    expect(tapType).toBe(spawnType);
+  });
+
+  it('passes the merged shape type to playNote on a merge chime', () => {
+    const sound = mockSound();
+    const rng = seq([0, 0, 0, 0, 0, 0]);
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={rng} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerDown(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    sound.playNote.mockClear();
+
+    act(() => { cbs[cbs.length - 1](16); });
+
+    expect(sound.playNote).toHaveBeenCalledTimes(1);
+    const [, mergeType] = sound.playNote.mock.calls[0];
+    expect(['circle', 'square', 'triangle', 'star']).toContain(mergeType);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  // jsdom has no navigator.vibrate, so define it per test rather than
+  // stubbing the whole navigator object.
+  const installVibrate = () => {
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true });
+    return vibrate;
+  };
+
+  // Spawns one shape and double-taps it to pop. rng high so the shape is
+  // large enough to split, matching the existing pop tests. pointerdown and
+  // pointerup both fire on the shape group — a pointerdown on the svg has no
+  // [data-id] ancestor and would spawn another shape instead of tapping this
+  // one. Both taps land inside DOUBLE_TAP_MS (300ms) because fireEvent is
+  // synchronous under real timers.
+  const spawnAndPop = (container) => {
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    const g = container.querySelector('svg > g[data-id]');
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerDown(g, { clientX: 100, clientY: 100, pointerId: 3 });
+    fireEvent.pointerUp(g, { clientX: 100, clientY: 100, pointerId: 3 });
+  };
+
+  it('vibrates on a pop', () => {
+    const vibrate = installVibrate();
+    const { container } = render(<DoodleCanvas rng={seq([0.99])} sound={mockSound()} />);
+    spawnAndPop(container);
+    expect(vibrate).toHaveBeenCalled();
+  });
+
+  it('stays silent on a pop while muted', () => {
+    const vibrate = installVibrate();
+    const { container, getByLabelText } = render(
+      <DoodleCanvas rng={seq([0.99])} sound={mockSound()} />,
+    );
+    fireEvent.click(getByLabelText('Mute'));
+    spawnAndPop(container);
+    expect(vibrate).not.toHaveBeenCalled();
+  });
+
+  it('runs without navigator.vibrate', () => {
+    const { container } = render(<DoodleCanvas rng={seq([0.99])} sound={mockSound()} />);
+    expect(() => spawnAndPop(container)).not.toThrow();
+  });
+
+  it('vibrates on a merge chime', () => {
+    // Near-identical to 'passes the merged shape type to playNote on a merge
+    // chime' above — closes the gap that haptics' merge-vibration wiring
+    // (DoodleCanvas.jsx's advance-loop 'merge' event handler) had no
+    // component-level test.
+    const vibrate = installVibrate();
+    const rng = seq([0, 0, 0, 0, 0, 0]);
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={rng} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerDown(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 210, clientY: 200, pointerId: 2 });
+    expect(shapeGroups(container)).toHaveLength(2);
+
+    act(() => { cbs[cbs.length - 1](16); });
+
+    expect(shapeGroups(container)).toHaveLength(1); // merged
+    expect(vibrate).toHaveBeenCalled();
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('cycles the toolbar speed button through slow motion, freeze and normal', () => {
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Slow motion'));
+    expect(localStorage.getItem('doodle-time-scale')).toBe('0.25');
+    fireEvent.click(getByLabelText('Freeze'));
+    expect(localStorage.getItem('doodle-time-scale')).toBe('0');
+    fireEvent.click(getByLabelText('Normal speed'));
+    expect(localStorage.getItem('doodle-time-scale')).toBe('1');
+  });
+
+  it('restores a stored slow-motion choice but never opens frozen', () => {
+    localStorage.setItem('doodle-time-scale', '0.25');
+    const { getByLabelText, unmount } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    expect(getByLabelText('Freeze')).toBeInTheDocument(); // next action from 0.25
+    unmount();
+
+    localStorage.setItem('doodle-time-scale', '0');
+    const second = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    // A child cannot diagnose why nothing moves, so a stored freeze opens at 1.
+    expect(second.getByLabelText('Slow motion')).toBeInTheDocument();
+  });
+
+  it('freezing stops the shape moving but leaves pointer interaction working', () => {
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container, getByLabelText } = render(
+      <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+    );
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    fireEvent.click(getByLabelText('Slow motion'));
+    fireEvent.click(getByLabelText('Freeze'));
+
+    const before = shapeGroups(container)[0].getAttribute('transform');
+    act(() => { cbs[cbs.length - 1](16); });
+    act(() => { cbs[cbs.length - 1](32); });
+    expect(shapeGroups(container)[0].getAttribute('transform')).toBe(before);
+    // No dust accumulates either: advanceParticles(p, 0) would age nothing,
+    // so the tick must skip the body rather than pass a zero delta.
+    expect(container.querySelectorAll('circle[cx]')).toHaveLength(0);
+
+    // Pointer interaction still works while frozen.
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 2 });
+    expect(shapeGroups(container)).toHaveLength(2);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('caps particles at tuning.maxParticles even while frozen', () => {
+    // Regression: advanceParticles (the only place maxParticles is enforced)
+    // never runs on a frozen tick, but addParticles (tap-spawned squash
+    // poofs) is still reachable while frozen — so without a trim in the
+    // freeze branch itself, particles would accumulate unbounded for as
+    // long as the freeze lasts.
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container, getByLabelText } = render(
+      <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+    );
+    fireEvent.click(getByLabelText('Open tuning panel'));
+    fireEvent.change(getByLabelText('Max particles'), { target: { value: '3' } });
+    fireEvent.click(getByLabelText('Close tuning panel'));
+
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    fireEvent.click(getByLabelText('Slow motion'));
+    fireEvent.click(getByLabelText('Freeze'));
+
+    const g = container.querySelector('svg > g[data-id]');
+    // A single tap-squash spawns 5 particles — already past the 3-particle
+    // cap — while frozen.
+    fireEvent.pointerDown(g, { clientX: 500, clientY: 500, pointerId: 2 });
+    fireEvent.pointerUp(g, { clientX: 500, clientY: 500, pointerId: 2 });
+    // Drive one frozen tick: this is where the trim must happen. The tick
+    // itself triggers no state update, so it won't force a re-render by
+    // itself — toggling mute afterwards forces one, surfacing whatever the
+    // (now-trimmed) particle ref actually holds.
+    act(() => { cbs[cbs.length - 1](16); });
+    fireEvent.click(getByLabelText('Mute'));
+
+    expect(container.querySelectorAll('circle[cx]').length).toBe(3);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('a frozen tick keeps re-arming itself and motion resumes after unfreezing', () => {
+    // Regression: if the freeze branch's requestAnimationFrame(tick) call
+    // were ever deleted, cbs would stop growing and driving "the latest
+    // frame" would silently keep re-running the same already-early-returning
+    // callback — the existing freeze tests would still pass despite the loop
+    // being permanently stuck.
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container, getByLabelText } = render(
+      <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+    );
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    fireEvent.click(getByLabelText('Slow motion'));
+    fireEvent.click(getByLabelText('Freeze'));
+
+    const cbsCountBeforeFrozenTick = cbs.length;
+    act(() => { cbs[cbs.length - 1](16); });
+    expect(cbs.length).toBeGreaterThan(cbsCountBeforeFrozenTick); // re-armed itself while frozen
+
+    fireEvent.click(getByLabelText('Normal speed')); // unfreeze
+
+    const before = shapeGroups(container)[0].getAttribute('transform');
+    act(() => { cbs[cbs.length - 1](32); }); // first tick after unfreezing
+    const after = shapeGroups(container)[0].getAttribute('transform');
+    expect(after).not.toBe(before); // motion actually resumed, not just the loop ticking
+
+    // Bounded displacement: if `last` weren't correctly recorded during the
+    // freeze, unfreezing would apply one huge stale delta and the shape
+    // would jump far more than one normal frame's worth of drift.
+    const parse = (t) => t.match(/^translate\(([-\d.]+) ([-\d.]+)\)/).slice(1, 3).map(Number);
+    const [xBefore, yBefore] = parse(before);
+    const [xAfter, yAfter] = parse(after);
+    expect(Math.hypot(xAfter - xBefore, yAfter - yBefore)).toBeLessThan(20);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('keeps advancing shapes at normal speed', () => {
+    const { cbs, rectSpy, nowSpy } = driveOneFrame();
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    const before = shapeGroups(container)[0].getAttribute('transform');
+    act(() => { cbs[cbs.length - 1](16); });
+    expect(shapeGroups(container)[0].getAttribute('transform')).not.toBe(before);
+
+    nowSpy.mockRestore();
+    rectSpy.mockRestore();
+  });
+
+  it('slow motion (0.25x) produces roughly a quarter of normal speed\'s displacement', () => {
+    // Since dt = rawDt * timeScaleRef.current is the identity at scale 1,
+    // and the freeze branch (scale 0) never reaches this line at all, the
+    // multiplication itself is otherwise never exercised by a behavioral
+    // assertion — deleting it would not fail any other test.
+    const parse = (t) => t.match(/^translate\(([-\d.]+) ([-\d.]+)\)/).slice(1, 3).map(Number);
+
+    const driveAndMeasure = (scaleButtonLabels) => {
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container, getByLabelText, unmount } = render(
+        <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+      );
+      const svg = stage(container);
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      scaleButtonLabels.forEach((label) => fireEvent.click(getByLabelText(label)));
+
+      const [xBefore, yBefore] = parse(shapeGroups(container)[0].getAttribute('transform'));
+      act(() => { cbs[cbs.length - 1](16); });
+      const [xAfter, yAfter] = parse(shapeGroups(container)[0].getAttribute('transform'));
+
+      unmount();
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      return Math.hypot(xAfter - xBefore, yAfter - yBefore);
+    };
+
+    const normalDisplacement = driveAndMeasure([]);
+    const slowDisplacement = driveAndMeasure(['Slow motion']);
+
+    expect(normalDisplacement).toBeGreaterThan(0);
+    expect(slowDisplacement).toBeGreaterThan(0);
+    expect(slowDisplacement).toBeLessThan(normalDisplacement * 0.5); // meaningfully smaller
+    // Roughly a quarter, with generous tolerance — physics-integrated
+    // motion, not a pure arithmetic check.
+    expect(Math.abs(slowDisplacement - normalDisplacement * 0.25)).toBeLessThan(normalDisplacement * 0.1);
+  });
+
+  it('captures a flick throw while frozen, taking effect once unfrozen', () => {
+    // Cross-feature composition: pointer sampling (onPointerMove/onPointerUp)
+    // happens outside the rAF drift loop, so it isn't gated on timeScale —
+    // a flick performed while frozen should still compute and persist a
+    // real throw velocity, even though the shape never visibly moved.
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Slow motion'));
+    fireEvent.click(getByLabelText('Freeze'));
+    expect(getByLabelText('Normal speed')).toBeInTheDocument(); // confirms frozen (timeScale 0)
+
+    // Same flick sequence as 'a flick release throws the shape along the
+    // flick direction': first move clears MOVE_THRESHOLD, then 60px in 30ms.
+    const svg = spawnAndDrag(container, [
+      { x: 140, y: 100, t: 100 },
+      { x: 170, y: 100, t: 120 },
+      { x: 200, y: 100, t: 130 },
+    ]);
+    vi.setSystemTime(135);
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 100, pointerId: 2 });
+
+    const shape = persistedShape();
+    expect(Math.hypot(shape.vx, shape.vy)).toBeGreaterThan(0);
+    vi.useRealTimers();
   });
 });
