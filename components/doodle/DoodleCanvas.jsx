@@ -24,6 +24,9 @@ import {
   spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles, COLLISION_BURST_MAX_AGE,
   DEFAULT_MAX_PARTICLES, DEFAULT_DUST_MAX_AGE,
 } from '../../lib/doodleParticles';
+import {
+  DEFAULT_WELL_HOLD_MS, DEFAULT_WELL_MAX_SPEED, DEFAULT_WELL_RADIUS, DEFAULT_WELL_STRENGTH,
+} from '../../lib/doodleWell';
 import Shape from './Shape';
 import Stroke from './Stroke';
 import Particles from './Particles';
@@ -87,6 +90,10 @@ const DEFAULT_TUNING = {
   maxSpeed: DEFAULT_MAX_SPEED,
   tiltStrength: DEFAULT_TILT_STRENGTH,
   tiltDamping: DEFAULT_TILT_DAMPING,
+  wellRadius: DEFAULT_WELL_RADIUS,
+  wellStrength: DEFAULT_WELL_STRENGTH,
+  wellMaxSpeed: DEFAULT_WELL_MAX_SPEED,
+  wellHoldMs: DEFAULT_WELL_HOLD_MS,
 };
 
 // A fixed C-E-A triad drawn from the pentatonic NOTES scale. Fixed rather
