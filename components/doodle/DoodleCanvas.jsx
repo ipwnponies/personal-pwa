@@ -13,6 +13,9 @@ import {
   MIN_SIZE, MAX_SIZE, DEFAULT_MAX_THROW_SPEED, THROW_SAMPLE_WINDOW_MS, throwVelocity,
 } from '../../lib/doodleShapes';
 import {
+  useMotionPermission, PERMISSION_NEEDED, PERMISSION_DENIED,
+} from '../../lib/useMotionPermission';
+import {
   spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles, COLLISION_BURST_MAX_AGE,
   DEFAULT_MAX_PARTICLES, DEFAULT_DUST_MAX_AGE,
 } from '../../lib/doodleParticles';
@@ -123,6 +126,11 @@ export default function DoodleCanvas({ rng, sound }) {
   const [timeScale, setTimeScale] = useState(1);
   const timeScaleRef = useRef(timeScale);
   timeScaleRef.current = timeScale;
+
+  // iOS gates devicemotion/deviceorientation behind a tap; everywhere else
+  // `motionEnabled` is true from mount with no button ever shown. Shake
+  // (commit 2) and tilt (commit 3) both hang off this.
+  const { status: permissionStatus, request: requestMotionPermission, motionEnabled } = useMotionPermission();
 
   const trailsEnabledRef = useRef(trailsEnabled);
   trailsEnabledRef.current = trailsEnabled;
@@ -701,6 +709,16 @@ export default function DoodleCanvas({ rng, sound }) {
         >
           {trailsEnabled ? '💨' : '🚫'}
         </button>
+        {(permissionStatus === PERMISSION_NEEDED || permissionStatus === PERMISSION_DENIED) && (
+          <button
+            type="button"
+            className={styles.toolButton}
+            aria-label={permissionStatus === PERMISSION_DENIED ? 'Motion controls blocked' : 'Enable motion controls'}
+            onClick={requestMotionPermission}
+          >
+            {permissionStatus === PERMISSION_DENIED ? '🚷' : '📱'}
+          </button>
+        )}
         <button
           type="button"
           className={styles.toolButton}

@@ -1632,4 +1632,42 @@ describe('DoodleCanvas', () => {
     nowSpy.mockRestore();
     rectSpy.mockRestore();
   });
+
+
+  it('shows no motion-permission button when the platform does not gate motion', () => {
+    const { queryByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    expect(queryByLabelText('Enable motion controls')).toBeNull();
+  });
+
+  it('shows a motion-permission button when the platform gates motion', () => {
+    vi.stubGlobal('DeviceMotionEvent', { requestPermission: vi.fn().mockResolvedValue('granted') });
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    expect(getByLabelText('Enable motion controls')).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it('tapping the motion-permission button requests permission and hides the button', async () => {
+    const requestPermission = vi.fn().mockResolvedValue('granted');
+    vi.stubGlobal('DeviceMotionEvent', { requestPermission });
+    vi.stubGlobal('DeviceOrientationEvent', { requestPermission });
+    const { getByLabelText, queryByLabelText } = render(
+      <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+    );
+    await act(async () => {
+      fireEvent.click(getByLabelText('Enable motion controls'));
+    });
+    expect(requestPermission).toHaveBeenCalledTimes(2);
+    expect(queryByLabelText('Enable motion controls')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps a labelled button visible when motion permission is denied', async () => {
+    vi.stubGlobal('DeviceMotionEvent', { requestPermission: vi.fn().mockResolvedValue('denied') });
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    await act(async () => {
+      fireEvent.click(getByLabelText('Enable motion controls'));
+    });
+    expect(getByLabelText('Motion controls blocked')).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
 });
