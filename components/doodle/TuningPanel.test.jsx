@@ -15,6 +15,8 @@ const baseTuning = {
   wallImmunityS: 1.5,
   shakeImpulse: 260,
   maxSpeed: 600,
+  tiltStrength: 400,
+  tiltDamping: 1.2,
 };
 
 describe('TuningPanel', () => {
@@ -75,5 +77,22 @@ describe('TuningPanel', () => {
     );
     fireEvent.change(getByLabelText('Shake impulse (px/s)'), { target: { value: '400' } });
     expect(onChange).toHaveBeenCalledWith('shakeImpulse', 400);
+  });
+
+  it('renders the tilt tuning fields', () => {
+    const { getByLabelText } = render(
+      <TuningPanel tuning={baseTuning} onChange={() => {}} onReset={() => {}} onClose={() => {}} />,
+    );
+    expect(getByLabelText('Tilt strength (px/s²)').value).toBe('400');
+    expect(getByLabelText('Tilt damping (1/s)').value).toBe('1.2');
+  });
+
+  it('calls onChange for the tilt strength field', () => {
+    const onChange = vi.fn();
+    const { getByLabelText } = render(
+      <TuningPanel tuning={baseTuning} onChange={onChange} onReset={() => {}} onClose={() => {}} />,
+    );
+    fireEvent.change(getByLabelText('Tilt strength (px/s²)'), { target: { value: '800' } });
+    expect(onChange).toHaveBeenCalledWith('tiltStrength', 800);
   });
 });

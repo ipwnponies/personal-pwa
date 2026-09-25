@@ -587,4 +587,30 @@ describe('useDoodleObjects', () => {
     const stroke = result.current.objects.find((o) => o.id === id);
     expect(stroke.vx).toBeUndefined();
   });
+
+  it('advance threads a gravity vector through to every shape', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(500, 500); });
+    const before = result.current.objects.find((o) => o.id === shape.id).vy;
+    act(() => {
+      result.current.advance(0.1, { width: 1000, height: 1000 }, new Set(), {
+        accel: { x: 0, y: 1000 },
+      });
+    });
+    const after = result.current.objects.find((o) => o.id === shape.id).vy;
+    expect(after - before).toBeCloseTo(100);
+  });
+
+  it('advance with no physics argument leaves velocity untouched', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(500, 500); });
+    const before = result.current.objects.find((o) => o.id === shape.id).vy;
+    act(() => {
+      result.current.advance(0.1, { width: 1000, height: 1000 }, new Set());
+    });
+    const after = result.current.objects.find((o) => o.id === shape.id).vy;
+    expect(after).toBeCloseTo(before);
+  });
 });

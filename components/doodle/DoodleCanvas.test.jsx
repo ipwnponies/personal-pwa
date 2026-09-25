@@ -1162,6 +1162,37 @@ describe('DoodleCanvas', () => {
     vi.useRealTimers();
   });
 
+  it('a raised max throw speed is not silently re-clamped back down by the per-frame max shape speed', () => {
+    // Fix regression: advanceShape's per-frame maxSpeed clamp runs every rAF
+    // tick after a throw, not just throwVelocity's one-time release clamp.
+    // Before the fix, a shape released above tuning.maxSpeed's default
+    // (600, unrelated to and lower than maxThrowSpeed's own usable range up
+    // to 3000) got silently re-clamped down to 600 on the very next tick,
+    // making a raised "Max throw speed" appear to do nothing.
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Open tuning panel'));
+    fireEvent.change(getByLabelText('Max throw speed (px/s)'), { target: { value: '2500' } });
+    fireEvent.click(getByLabelText('Close tuning panel'));
+
+    // Same flick as above: 60px in 30ms = 2000px/s raw — now under the
+    // raised 2500 throw ceiling, so throwVelocity itself doesn't clamp it.
+    const svg = spawnAndDrag(container, [
+      { x: 140, y: 100, t: 100 },
+      { x: 170, y: 100, t: 120 },
+      { x: 200, y: 100, t: 130 },
+    ]);
+    vi.setSystemTime(135);
+    fireEvent.pointerUp(svg, { clientX: 200, clientY: 100, pointerId: 2 });
+
+    // persistedShape() advances 1000ms of (faked) rAF ticks, which is where
+    // the bug fired: the per-frame clamp is not tilt's clamp to preserve.
+    const shape = persistedShape();
+    expect(Math.hypot(shape.vx, shape.vy)).toBeCloseTo(2000);
+    vi.useRealTimers();
+  });
+
   it('a release after the finger stops moving parks the shape', () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
@@ -1713,5 +1744,178 @@ describe('DoodleCanvas', () => {
     expect(strokes(container)).toHaveLength(1);
     act(() => dispatchShake());
     expect(strokes(container)).toHaveLength(1);
+  });
+
+  it('shows the tilt toggle, off by default, when motion needs no permission', () => {
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    expect(getByLabelText('Enable tilt gravity')).toBeInTheDocument();
+  });
+
+  it('hides the tilt toggle until motion permission is granted', () => {
+    vi.stubGlobal('DeviceMotionEvent', { requestPermission: vi.fn().mockResolvedValue('granted') });
+    const { queryByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    expect(queryByLabelText('Enable tilt gravity')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the tilt toggle once motion permission is granted', async () => {
+    const requestPermission = vi.fn().mockResolvedValue('granted');
+    vi.stubGlobal('DeviceMotionEvent', { requestPermission });
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    await act(async () => {
+      fireEvent.click(getByLabelText('Enable motion controls'));
+    });
+    expect(getByLabelText('Enable tilt gravity')).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it('toggling tilt flips the label and persists the preference', () => {
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Enable tilt gravity'));
+    expect(getByLabelText('Disable tilt gravity')).toBeInTheDocument();
+    expect(localStorage.getItem('doodle-tilt')).toBe('true');
+  });
+
+  it('restores a stored tilt preference on mount', () => {
+    localStorage.setItem('doodle-tilt', 'true');
+    const { getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    expect(getByLabelText('Disable tilt gravity')).toBeInTheDocument();
+  });
+
+  it('tilt gravity pulls a shape further down than plain drift over the same frame', () => {
+    // Shape.jsx renders transform="translate(x y) rotate(r)" — space
+    // separated, no comma.
+    const shapeY = (container) => Number(
+      shapeGroups(container)[0].getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/)[2],
+    );
+
+    // Same rng seed and same frame both times, so the only difference is
+    // gravity. Asserting "y went up" on a single run would pass on the
+    // shape's own downward drift alone.
+    const runFrame = (tiltOn) => {
+      localStorage.clear(); // don't hydrate the previous run's shape or toggle
+      const { cbs, rectSpy, nowSpy } = driveOneFrame(); // must precede render
+      const { container, getByLabelText, unmount } = render(
+        <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+      );
+      const svg = stage(container);
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      if (tiltOn) {
+        fireEvent.click(getByLabelText('Enable tilt gravity'));
+        act(() => {
+          const event = new Event('deviceorientation');
+          event.beta = 45;
+          event.gamma = 0;
+          window.dispatchEvent(event);
+        });
+      }
+      act(() => { cbs[cbs.length - 1](500); });
+      const y = shapeY(container);
+      unmount();
+      rectSpy.mockRestore();
+      nowSpy.mockRestore();
+      return y;
+    };
+
+    expect(runFrame(true)).toBeGreaterThan(runFrame(false));
+  });
+
+  it('a raised max throw speed does not also raise the ceiling for sustained tilt gravity', () => {
+    // Regression: the fix that let a coasting flick-throw keep its raised
+    // maxThrowSpeed (instead of being re-clamped to maxSpeed on the very
+    // next frame) took the higher of maxSpeed and maxThrowSpeed
+    // unconditionally. That let tilt's CONTINUOUS acceleration reach a
+    // throw-sized ceiling too, defeating the reason maxSpeed exists at all
+    // (see DEFAULT_MAX_SPEED in doodleShapes.js): a hard ceiling so
+    // sustained force can't accelerate a shape past the point where it
+    // tunnels through a wall in one frame. The ceiling must stay at the
+    // lower maxSpeed value while tilt is on, regardless of maxThrowSpeed.
+    vi.useFakeTimers();
+    const { cbs, rectSpy, nowSpy } = driveOneFrame(); // must precede render
+    // A very tall stage: the shape must never reach the bottom wall during
+    // the frames below, so a bounce (which flips vy's sign but leaves the
+    // clamped magnitude unchanged) can't be mistaken for the cap breaking.
+    rectSpy.mockReturnValue({
+      width: 1000, height: 1000000, left: 0, top: 0, right: 1000, bottom: 1000000, x: 0, y: 0, toJSON: () => ({}),
+    });
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+    fireEvent.click(getByLabelText('Open tuning panel'));
+    // Push every relevant field to the setting that would expose the bug:
+    // a much higher throw ceiling, full tilt strength, and zero damping so
+    // velocity keeps climbing every frame instead of settling below the cap.
+    fireEvent.change(getByLabelText('Max throw speed (px/s)'), { target: { value: '3000' } });
+    fireEvent.change(getByLabelText('Tilt strength (px/s²)'), { target: { value: '2000' } });
+    fireEvent.change(getByLabelText('Tilt damping (1/s)'), { target: { value: '0' } });
+    fireEvent.click(getByLabelText('Close tuning panel'));
+
+    fireEvent.click(getByLabelText('Enable tilt gravity'));
+    act(() => {
+      const event = new Event('deviceorientation');
+      event.beta = 45; // full tilt
+      event.gamma = 0;
+      window.dispatchEvent(event);
+    });
+
+    // 20 frames at the clamped 0.05s each, zero damping: unclamped velocity
+    // would reach tiltStrength * dt * frames = 2000 * 0.05 * 20 = 2000px/s —
+    // comfortably past the default maxSpeed (600) this test must prove still
+    // holds, and past what the pre-fix bug would have let through too (which
+    // maxed out around here, well under maxThrowSpeed's 3000 ceiling).
+    for (let frame = 1; frame <= 20; frame += 1) {
+      act(() => { cbs[cbs.length - 1](frame * 1000); });
+    }
+    act(() => { vi.advanceTimersByTime(1000); }); // flush the persistence interval
+
+    const shape = JSON.parse(localStorage.getItem('doodle-objects')).find((o) => o.kind === 'shape');
+    expect(Math.hypot(shape.vx, shape.vy)).toBeCloseTo(600);
+
+    rectSpy.mockRestore();
+    nowSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('a level device (tilt toggle on, beta=0 gamma=0) does not damp ordinary drift toward zero', () => {
+    // Fix 2 regression: damping used to apply at full configured strength
+    // whenever the tilt toggle was merely on, regardless of actual tilt
+    // magnitude. On a flat desktop/tablet (beta=gamma=0), that silently
+    // killed drift within a few seconds even though gravity itself
+    // contributes nothing. Damping must now scale with how much the device
+    // is actually tilted, so a level device drifts identically to tilt-off.
+    const shapeY = (container) => Number(
+      shapeGroups(container)[0].getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)\)/)[2],
+    );
+
+    const runFrame = (tiltOn) => {
+      localStorage.clear(); // don't hydrate the previous run's shape or toggle
+      const { cbs, rectSpy, nowSpy } = driveOneFrame(); // must precede render
+      const { container, getByLabelText, unmount } = render(
+        <DoodleCanvas rng={seq([0.3])} sound={mockSound()} />,
+      );
+      const svg = stage(container);
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      if (tiltOn) {
+        fireEvent.click(getByLabelText('Enable tilt gravity'));
+        act(() => {
+          const event = new Event('deviceorientation');
+          event.beta = 0;
+          event.gamma = 0;
+          window.dispatchEvent(event);
+        });
+      }
+      act(() => { cbs[cbs.length - 1](500); });
+      const y = shapeY(container);
+      unmount();
+      rectSpy.mockRestore();
+      nowSpy.mockRestore();
+      return y;
+    };
+
+    expect(runFrame(true)).toBeCloseTo(runFrame(false));
   });
 });
