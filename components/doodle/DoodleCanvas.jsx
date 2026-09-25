@@ -11,10 +11,12 @@ import {
 import { clamp } from '../../lib/random';
 import {
   MIN_SIZE, MAX_SIZE, DEFAULT_MAX_THROW_SPEED, THROW_SAMPLE_WINDOW_MS, throwVelocity,
+  NOTES, scatterShapes, DEFAULT_SHAKE_IMPULSE, DEFAULT_MAX_SPEED,
 } from '../../lib/doodleShapes';
 import {
   useMotionPermission, PERMISSION_NEEDED, PERMISSION_DENIED,
 } from '../../lib/useMotionPermission';
+import { useShakeDetection } from '../../lib/useShakeDetection';
 import {
   spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles, COLLISION_BURST_MAX_AGE,
   DEFAULT_MAX_PARTICLES, DEFAULT_DUST_MAX_AGE,
@@ -77,12 +79,19 @@ const DEFAULT_TUNING = {
   wallRestitution: DEFAULT_WALL_RESTITUTION,
   stuckAfterS: DEFAULT_STUCK_AFTER_S,
   wallImmunityS: DEFAULT_WALL_IMMUNITY_S,
+  shakeImpulse: DEFAULT_SHAKE_IMPULSE,
+  maxSpeed: DEFAULT_MAX_SPEED,
 };
+
+// A fixed C-E-A triad drawn from the pentatonic NOTES scale. Fixed rather
+// than randomized so a shake always sounds like the same event, and
+// consonant with whatever notes the shapes themselves are carrying.
+const SHAKE_CHORD = [NOTES[0], NOTES[2], NOTES[4]];
 
 export default function DoodleCanvas({ rng, sound }) {
   const {
     objects, spawnShape, startStroke, appendStrokePoint, moveShape, throwShape, transformShape,
-    popShape, releaseShape, advance, clear, restore,
+    popShape, releaseShape, applyToShapes, advance, clear, restore,
   } = useDoodleObjects(rng);
 
   const svgRef = useRef(null);
@@ -454,6 +463,27 @@ export default function DoodleCanvas({ rng, sound }) {
     }
   };
 
+  // A shake pushes every shape outward from the centre of the stage, sprays
+  // a burst from each, and rolls a chord. Shapes are pushed, never popped —
+  // a shake should feel like a big gust, not a reset.
+  const handleShake = useCallback(() => {
+    const shapes = objectsRef.current.filter((o) => o.kind === 'shape');
+    if (shapes.length === 0) return;
+    const rect = svgRef.current?.getBoundingClientRect();
+    const centerX = (rect?.width || 0) / 2;
+    const centerY = (rect?.height || 0) / 2;
+    const { shakeImpulse, maxSpeed } = tuningRef.current;
+    const burst = [];
+    shapes.forEach((shape) => {
+      burst.push(...spawnBurst(shape.x, shape.y, shape.color, null, COLLISION_BURST_MAX_AGE));
+    });
+    addParticles(burst);
+    applyToShapes((current) => scatterShapes(current, centerX, centerY, rng, shakeImpulse, maxSpeed));
+    soundRef.current.playChord(SHAKE_CHORD);
+  }, [applyToShapes, rng]);
+
+  useShakeDetection(handleShake);
+
   // Note: we rely on the browser's implicit pointer capture — on touch, the
   // pointerdown target keeps receiving move/up events even if the finger
   // leaves that element — so a drag that wanders off a shape still tracks. The
@@ -764,6 +794,7 @@ DoodleCanvas.propTypes = {
     playNote: PropTypes.func.isRequired,
     playStroke: PropTypes.func.isRequired,
     playPop: PropTypes.func.isRequired,
+    playChord: PropTypes.func.isRequired,
     setMuted: PropTypes.func.isRequired,
     isMuted: PropTypes.func.isRequired,
   }),

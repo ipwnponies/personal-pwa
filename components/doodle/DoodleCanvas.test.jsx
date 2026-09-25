@@ -17,9 +17,19 @@ const mockSound = () => ({
   playNote: vi.fn(),
   playStroke: vi.fn(),
   playPop: vi.fn(),
+  playChord: vi.fn(),
   setMuted: vi.fn(),
   isMuted: () => false,
 });
+
+const dispatchShake = () => {
+  const quiet = new Event('devicemotion');
+  quiet.accelerationIncludingGravity = { x: 0, y: 0, z: 0 };
+  window.dispatchEvent(quiet);
+  const jolt = new Event('devicemotion');
+  jolt.accelerationIncludingGravity = { x: 0, y: 0, z: 40 };
+  window.dispatchEvent(jolt);
+};
 
 beforeEach(() => {
   localStorage.clear();
@@ -1017,13 +1027,12 @@ describe('DoodleCanvas', () => {
   });
 
   it('tuning panel is closed by default and opens on toggle', () => {
-    const { container, getByLabelText, queryByRole } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    const { getByLabelText, queryByRole } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
     expect(queryByRole('dialog', { name: 'Tuning settings' })).toBeNull();
     fireEvent.click(getByLabelText('Open tuning panel'));
     expect(queryByRole('dialog', { name: 'Tuning settings' })).toBeTruthy();
     fireEvent.click(getByLabelText('Close tuning panel'));
     expect(queryByRole('dialog', { name: 'Tuning settings' })).toBeNull();
-    void container;
   });
 
   it('changing a tuning value persists it to localStorage under doodle-tuning', () => {
@@ -1669,5 +1678,40 @@ describe('DoodleCanvas', () => {
     });
     expect(getByLabelText('Motion controls blocked')).toBeInTheDocument();
     vi.unstubAllGlobals();
+  });
+
+  it('a shake plays a chord and spawns a burst per shape', () => {
+    const sound = mockSound();
+    const { container } = render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 100, clientY: 100, pointerId: 1 });
+    expect(shapeGroups(container)).toHaveLength(1);
+
+    act(() => dispatchShake());
+
+    expect(sound.playChord).toHaveBeenCalledTimes(1);
+    // spawnBurst emits 8 'burst' particles, each rendered as an svg <line>.
+    expect(container.querySelectorAll('svg line')).toHaveLength(8);
+    // The shape survives a shake — it is pushed, not popped.
+    expect(shapeGroups(container)).toHaveLength(1);
+  });
+
+  it('a shake on an empty canvas plays nothing', () => {
+    const sound = mockSound();
+    render(<DoodleCanvas rng={seq([0.3])} sound={sound} />);
+    act(() => dispatchShake());
+    expect(sound.playChord).not.toHaveBeenCalled();
+  });
+
+  it('a shake leaves strokes alone', () => {
+    const { container, getByLabelText } = render(<DoodleCanvas rng={seq([0.3])} sound={mockSound()} />);
+    fireEvent.click(getByLabelText('Switch to draw mode'));
+    const svg = stage(container);
+    fireEvent.pointerDown(svg, { clientX: 10, clientY: 10, pointerId: 1 });
+    fireEvent.pointerUp(svg, { clientX: 10, clientY: 10, pointerId: 1 });
+    expect(strokes(container)).toHaveLength(1);
+    act(() => dispatchShake());
+    expect(strokes(container)).toHaveLength(1);
   });
 });

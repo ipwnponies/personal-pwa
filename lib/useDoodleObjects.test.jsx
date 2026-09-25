@@ -288,6 +288,40 @@ describe('useDoodleObjects', () => {
     expect(result.current.objects).toEqual(before);
   });
 
+  it('applyToShapes replaces every shape with the transform result', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    act(() => { result.current.spawnShape(10, 20); });
+    act(() => { result.current.spawnShape(30, 40); });
+    act(() => {
+      result.current.applyToShapes((shapes) => shapes.map((s) => ({ ...s, vx: 999 })));
+    });
+    expect(result.current.objects.every((o) => o.vx === 999)).toBe(true);
+  });
+
+  it('applyToShapes leaves strokes untouched and keeps array order', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    let strokeId;
+    act(() => { strokeId = result.current.startStroke(0, 0); });
+    act(() => { result.current.spawnShape(10, 20); });
+    act(() => {
+      result.current.applyToShapes((shapes) => shapes.map((s) => ({ ...s, vx: 999 })));
+    });
+    expect(result.current.objects[0].id).toBe(strokeId);
+    expect(result.current.objects[0].kind).toBe('stroke');
+    expect(result.current.objects[0].vx).toBeUndefined();
+    expect(result.current.objects[1].vx).toBe(999);
+  });
+
+  it('applyToShapes is a no-op when there are no shapes', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.2])));
+    act(() => { result.current.startStroke(0, 0); });
+    const before = result.current.objects;
+    const transform = vi.fn();
+    act(() => { result.current.applyToShapes(transform); });
+    expect(transform).not.toHaveBeenCalled();
+    expect(result.current.objects).toBe(before);
+  });
+
   it('persists to localStorage and restores on a fresh hook (debounced)', () => {
     vi.useFakeTimers();
     const first = renderHook(() => useDoodleObjects(seq([0.2])));
