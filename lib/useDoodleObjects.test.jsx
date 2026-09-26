@@ -320,6 +320,207 @@ describe('useDoodleObjects', () => {
     vi.useRealTimers();
   });
 
+  // Drives a shape at (100, 80) straight down into a stroke drawn across
+  // y = 100. r = 20 + WALL_RADIUS 4 means contact begins 24px out.
+  const setUpWallHit = (result) => {
+    let shape;
+    act(() => { shape = result.current.spawnShape(100, 80); });
+    let strokeId;
+    act(() => { strokeId = result.current.startStroke(0, 100); });
+    act(() => result.current.appendStrokePoint(strokeId, 200, 100));
+    act(() => {
+      const live = result.current.objects.find((o) => o.id === shape.id);
+      live.x = 100;
+      live.y = 80;
+      live.vx = 0;
+      live.vy = 50;
+      live.size = 40;
+    });
+    return shape;
+  };
+
+  it('advance returns wallBounce events for a shape driven into a stroke', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    setUpWallHit(result);
+    let events;
+    act(() => {
+      events = result.current.advance(0.001, { width: 1000, height: 1000 }, null);
+    });
+    expect(events.some((e) => e.type === 'wallBounce')).toBe(true);
+  });
+
+  it('advance reverses a shape driven into a stroke', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    const shape = setUpWallHit(result);
+    act(() => result.current.advance(0.001, { width: 1000, height: 1000 }, null));
+    const after = result.current.objects.find((o) => o.id === shape.id);
+    expect(after.vy).toBeLessThan(0);
+  });
+
+  it('advance lets a grabbed shape pass through a stroke', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    const shape = setUpWallHit(result);
+    let events;
+    act(() => {
+      events = result.current.advance(
+        0.001, { width: 1000, height: 1000 }, new Set([shape.id]),
+      );
+    });
+    expect(events.some((e) => e.type === 'wallBounce')).toBe(false);
+    const after = result.current.objects.find((o) => o.id === shape.id);
+    expect(after.y).toBe(80);
+  });
+
+  it('advance threads wallRestitution from its tuning argument', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    const shape = setUpWallHit(result);
+    act(() => result.current.advance(
+      0.001, { width: 1000, height: 1000 }, null, { wallRestitution: 0.2 },
+    ));
+    const after = result.current.objects.find((o) => o.id === shape.id);
+    expect(after.vy).toBeCloseTo(-10, 0); // 50 * 0.2, minus a sliver of drift
+  });
+
+  it('grants wall immunity when a wall and the canvas edge trap a shape', () => {
+    // The genuine deadlock: a line drawn 30px from the left edge, and a shape
+    // whose own radius (20) leaves it no room between the two. The wall pushes
+    // it left, the bounds clamp pushes it right, forever — so the conflict is
+    // detected on the first frame and handed to immunity instead.
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(20, 100); });
+    let strokeId;
+    act(() => { strokeId = result.current.startStroke(30, 0); });
+    act(() => result.current.appendStrokePoint(strokeId, 30, 200));
+    act(() => {
+      const live = result.current.objects.find((o) => o.id === shape.id);
+      live.x = 20;
+      live.y = 100;
+      live.vx = 0;
+      live.vy = 0;
+      live.size = 40;
+    });
+
+    act(() => result.current.advance(
+      0.016, { width: 1000, height: 1000 }, null, { wallImmunityS: 2 },
+    ));
+
+    const after = result.current.objects.find((o) => o.id === shape.id);
+    expect(after.wallImmunityRemaining).toBe(2);
+    expect(after.x).toBe(20); // clamped back in, not left sitting out of bounds
+  });
+
+  it('releaseShape grants wall immunity that then expires', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(100, 100); });
+    act(() => result.current.releaseShape(shape.id, 0.5));
+    expect(
+      result.current.objects.find((o) => o.id === shape.id).wallImmunityRemaining,
+    ).toBe(0.5);
+
+    act(() => result.current.advance(0.6, { width: 1000, height: 1000 }, null));
+    expect(
+      result.current.objects.find((o) => o.id === shape.id).wallImmunityRemaining,
+    ).toBeUndefined();
+  });
+
+  it('withholds immunity when the clamp and the wall push are unrelated', () => {
+    // Not a deadlock: another shape shoves this one out past the left edge
+    // (so the clamp pushes it back along +x) while it separately brushes an
+    // unrelated horizontal wall below it (which pushes it along -y). The two
+    // corrections are perpendicular, not opposed, so nothing is trapped and no
+    // immunity is granted. Shapes are sized past MAX_MERGE_SIZE so they bounce
+    // rather than merge.
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    let a;
+    let b;
+    act(() => { a = result.current.spawnShape(60, 300); });
+    act(() => { b = result.current.spawnShape(170, 300); });
+    let strokeId;
+    act(() => { strokeId = result.current.startStroke(0, 360); });
+    act(() => result.current.appendStrokePoint(strokeId, 400, 360));
+    act(() => {
+      const liveA = result.current.objects.find((o) => o.id === a.id);
+      const liveB = result.current.objects.find((o) => o.id === b.id);
+      Object.assign(liveA, {
+        x: 60, y: 300, vx: 0, vy: 0, size: 120,
+      });
+      Object.assign(liveB, {
+        x: 170, y: 300, vx: 0, vy: 0, size: 120,
+      });
+    });
+
+    act(() => result.current.advance(
+      0.001, { width: 1000, height: 1000 }, null, { wallImmunityS: 2 },
+    ));
+
+    const after = result.current.objects.find((o) => o.id === a.id);
+    expect(after.x).toBe(60); // the clamp did fire (b shoved it out past x = 60)
+    expect(after.y).toBeCloseTo(296); // and it is in wall contact, pushed up 4
+    expect(after.wallImmunityRemaining).toBeUndefined(); // but not trapped
+  });
+
+  it('refreshes wall immunity while a shape is still overlapping a wall', () => {
+    // A shape parked on a line, immune. Immunity must not run out while it is
+    // still pinned — otherwise a tight enclosure produces a repeating
+    // "free for a moment, then jitter" cycle instead of a one-time rescue.
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(100, 95); });
+    let strokeId;
+    act(() => { strokeId = result.current.startStroke(0, 100); });
+    act(() => result.current.appendStrokePoint(strokeId, 200, 100));
+    act(() => {
+      const live = result.current.objects.find((o) => o.id === shape.id);
+      live.x = 100;
+      live.y = 95; // overlapping the line at y = 100 (r 20 + WALL_RADIUS 4)
+      live.vx = 0;
+      live.vy = 0;
+      live.size = 40;
+    });
+    act(() => result.current.releaseShape(shape.id, 0.5));
+
+    const immunity = () => result.current.objects
+      .find((o) => o.id === shape.id).wallImmunityRemaining;
+
+    for (let i = 0; i < 4; i += 1) {
+      act(() => result.current.advance(
+        0.2, { width: 1000, height: 1000 }, null, { wallImmunityS: 0.5 },
+      ));
+      expect(immunity()).toBe(0.5); // refreshed, never decaying toward zero
+    }
+
+    // Once it is clear of the wall the countdown resumes normally.
+    act(() => result.current.moveShape(shape.id, 100, 10));
+    act(() => result.current.advance(
+      0.2, { width: 1000, height: 1000 }, null, { wallImmunityS: 0.5 },
+    ));
+    expect(immunity()).toBeCloseTo(0.3);
+  });
+
+  it('releaseShape ignores a stroke id', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    let strokeId;
+    act(() => { strokeId = result.current.startStroke(0, 0); });
+    act(() => result.current.releaseShape(strokeId));
+    const stroke = result.current.objects.find((o) => o.id === strokeId);
+    expect(stroke.wallImmunityRemaining).toBeUndefined();
+  });
+
+  it('never persists the stuck tracker or the wall cache', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useDoodleObjects(seq([0.5])));
+    setUpWallHit(result);
+    act(() => result.current.advance(0.5, { width: 1000, height: 1000 }, null));
+    act(() => { vi.advanceTimersByTime(1000); });
+    const saved = JSON.parse(localStorage.getItem('doodle-objects'));
+    saved.forEach((o) => expect(['shape', 'stroke']).toContain(o.kind));
+    expect(JSON.stringify(saved)).not.toContain('contacted');
+    expect(JSON.stringify(saved)).not.toContain('pointCount');
+    vi.useRealTimers();
+  });
+
   it('tolerates a throwing localStorage', () => {
     const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('quota');

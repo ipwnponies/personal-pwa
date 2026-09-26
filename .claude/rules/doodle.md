@@ -20,6 +20,7 @@ Tap-and-draw musical sandbox for young children. Already split cleanly: page is 
 - `components/doodle/doodle.module.css` — component-scoped styles.
 - `lib/doodleShapes.js` — shape creation/split/merge/drift, pure functions.
 - `lib/doodlePhysics.js` — `resolveCollisions`: pairwise bounce/merge physics.
+- `lib/doodleWalls.js` — drawn strokes as static collision geometry: `buildWalls` (live, bbox-cached) and `resolveWallCollisions` (circle-against-capsule). Pure, and deliberately takes no `rng` — wall collision makes no random choice.
 - `lib/doodleParticles.js` — particle spawn/advance helpers.
 - `lib/useDoodleObjects.js` — the objects-array hook (spawn/move/transform/pop/advance/persist).
 - Tests co-located: `DoodleCanvas.test.jsx`, `Shape.test.jsx`, `TuningPanel.test.jsx`, `lib/doodle*.test.js`.
@@ -42,4 +43,4 @@ Tap-and-draw musical sandbox for young children. Already split cleanly: page is 
 
 ### Spawn-time collision immunity
 
-- A shape that spawns already overlapping another (split children spawning near the parent's point, sharing its color/shapeType) needs brief immunity from collision resolution, or it gets silently re-merged/bounced on the very next frame before a player can perceive it. Pattern: a `<name>Remaining` countdown field (seconds) set at spawn time, decremented in `advanceShape` and deleted once it hits zero, checked in `resolveCollisions` to skip that shape's collision handling entirely while active. `splitGraceRemaining`/`SPLIT_GRACE_S` is the existing instance — reuse this pattern rather than inventing a new one for future spawn-immunity needs.
+- A shape that spawns already overlapping another (split children spawning near the parent's point, sharing its color/shapeType) needs brief immunity from collision resolution, or it gets silently re-merged/bounced on the very next frame before a player can perceive it. Pattern: a `<name>Remaining` countdown field (seconds) set at spawn time, decremented in `advanceShape` and deleted once it hits zero, checked in `resolveCollisions` to skip that shape's collision handling entirely while active. `splitGraceRemaining`/`SPLIT_GRACE_S` is the original instance and `wallImmunityRemaining` (granted on a detected stuck-against-a-wall state, on a wall-versus-canvas-edge conflict, and on drag/pinch release) is the second — reuse this pattern rather than inventing a new one for future immunity needs.
