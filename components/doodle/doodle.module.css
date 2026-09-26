@@ -56,6 +56,17 @@
   100% { transform: scale(1); }
 }
 
+/* The engaged gravity-well ring breathes for as long as the finger stays
+   down, so it reuses the doodlePulse keyframes on an infinite, slower loop
+   rather than .pulse's one-shot 300ms tap feedback — a one-shot animation
+   fires once at mount and never restarts, because the ring keeps the same
+   DOM node across the well's per-frame re-renders. */
+.wellRing {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: doodlePulse 1.2s ease-in-out infinite;
+}
+
 .tuningPanel {
   position: absolute;
   top: 0.75rem;

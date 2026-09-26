@@ -613,4 +613,65 @@ describe('useDoodleObjects', () => {
     const after = result.current.objects.find((o) => o.id === shape.id).vy;
     expect(after).toBeCloseTo(before);
   });
+
+  it('advance accelerates a shape toward an open well', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(300, 500); });
+    // d = 200 from the well at x 500, radius 400 -> falloff 0.5.
+    // strength 600 * 0.5 * dt 0.1 = 30 px/s, straight along +x.
+    act(() => result.current.advance(
+      0.1,
+      { width: 1000, height: 1000 },
+      null,
+      { well: { x: 500, y: 500, radius: 400, strength: 600, maxSpeed: 400 } },
+    ));
+    const pulled = result.current.objects.find((o) => o.id === shape.id);
+    expect(pulled.vx).toBeCloseTo(shape.vx + 30, 6);
+    expect(pulled.vy).toBeCloseTo(shape.vy, 6);
+  });
+
+  it('advance leaves a shape outside the well radius alone', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(100, 500); });
+    act(() => result.current.advance(
+      0.1,
+      { width: 1000, height: 1000 },
+      null,
+      { well: { x: 500, y: 500, radius: 200, strength: 600, maxSpeed: 400 } },
+    ));
+    const untouched = result.current.objects.find((o) => o.id === shape.id);
+    expect(untouched.vx).toBeCloseTo(shape.vx, 6);
+    expect(untouched.vy).toBeCloseTo(shape.vy, 6);
+  });
+
+  it('advance skips the well for a grabbed shape', () => {
+    // A grabbed shape is already infinite mass to resolveCollisions and has
+    // its position restored afterwards, so a force applied to it would be
+    // discarded anyway. In practice the set is empty during a well, because a
+    // second pointer cancels it; the check keeps advance correct on its own.
+    const { result } = renderHook(() => useDoodleObjects(seq([0])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(300, 500); });
+    act(() => result.current.advance(
+      0.1,
+      { width: 1000, height: 1000 },
+      new Set([shape.id]),
+      { well: { x: 500, y: 500, radius: 400, strength: 600, maxSpeed: 400 } },
+    ));
+    const held = result.current.objects.find((o) => o.id === shape.id);
+    expect(held.vx).toBe(shape.vx);
+    expect(held.vy).toBe(shape.vy);
+  });
+
+  it('advance with no well argument behaves as it did before', () => {
+    const { result } = renderHook(() => useDoodleObjects(seq([0])));
+    let shape;
+    act(() => { shape = result.current.spawnShape(300, 500); });
+    act(() => result.current.advance(0.1, { width: 1000, height: 1000 }, null));
+    const drifted = result.current.objects.find((o) => o.id === shape.id);
+    expect(drifted.vx).toBeCloseTo(shape.vx, 6);
+    expect(drifted.x).toBeCloseTo(300 + shape.vx * 0.1, 6);
+  });
 });

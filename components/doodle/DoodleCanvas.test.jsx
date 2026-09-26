@@ -18,6 +18,7 @@ const mockSound = () => ({
   playStroke: vi.fn(),
   playPop: vi.fn(),
   playChord: vi.fn(),
+  playWell: vi.fn(),
   setMuted: vi.fn(),
   isMuted: () => false,
 });
@@ -1917,5 +1918,461 @@ describe('DoodleCanvas', () => {
     };
 
     expect(runFrame(true)).toBeCloseTo(runFrame(false));
+  });
+
+  describe('gravity well', () => {
+    // driveOneFrame() stubs performance.now to 0 and collects rAF callbacks;
+    // the well's own clock is Date.now(), which vi.setSystemTime drives. Fake
+    // timers must be installed BEFORE driveOneFrame so its performance.now
+    // spy is the outermost one.
+    const holdAndDriveFrames = (svg, { holdMs, cbs, pointerId = 1 }) => {
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId });
+      // One frame while still charging, then one past the hold threshold.
+      vi.setSystemTime(Math.floor(holdMs / 2));
+      act(() => { cbs[cbs.length - 1](16); });
+      vi.setSystemTime(holdMs + 50);
+      act(() => { cbs[cbs.length - 1](32); });
+      return svg;
+    };
+
+    // Shape.jsx renders `translate(x y) rotate(r)`, so this reads the x it
+    // was last placed at.
+    const shapeX = (container) => Number(
+      shapeGroups(container)[0].getAttribute('transform').match(/translate\(([-\d.]+)/)[1],
+    );
+
+    it('a hold past wellHoldMs opens a well and pulls a nearby shape toward it', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const sound = mockSound();
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container, getByLabelText } = render(
+        <DoodleCanvas rng={seq([0])} sound={sound} />,
+      );
+      // Zero the drift before spawning, so the only motion the assertion can
+      // see is the well's. With rng seq([0]) the spawn angle is 0, meaning a
+      // drifting shape would travel +x on its own and the test would pass
+      // whether or not the well did anything.
+      fireEvent.click(getByLabelText('Open tuning panel'));
+      fireEvent.change(getByLabelText('Drift speed min (px/s)'), { target: { value: '0' } });
+      fireEvent.change(getByLabelText('Drift speed max (px/s)'), { target: { value: '0' } });
+      fireEvent.click(getByLabelText('Close tuning panel'));
+
+      const svg = stage(container);
+      // Spawn a shape 100px to the left of where the hold will land, well
+      // inside the 200px default wellRadius.
+      fireEvent.pointerDown(svg, { clientX: 400, clientY: 500, pointerId: 9 });
+      fireEvent.pointerUp(svg, { clientX: 400, clientY: 500, pointerId: 9 });
+      expect(shapeGroups(container)).toHaveLength(1);
+      expect(shapeX(container)).toBeCloseTo(400, 6); // parked, no drift
+
+      holdAndDriveFrames(svg, { holdMs: 800, cbs });
+
+      expect(sound.playWell).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[data-testid="well-engaged"]')).not.toBeNull();
+
+      for (let i = 0; i < 20; i += 1) {
+        act(() => { cbs[cbs.length - 1](48 + i * 16); });
+      }
+
+      // The engage tone plays once, at engage — not once per engaged frame.
+      expect(sound.playWell).toHaveBeenCalledTimes(1);
+
+      // d = 100 at radius 200 -> falloff 0.5, so 600 * 0.5 = 300 px/s^2
+      // accumulating over ~20 frames of 16ms. It only has to be unambiguously
+      // rightward, not an exact figure.
+      expect(shapeX(container)).toBeGreaterThan(405);
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('a shape does not move on its own once drift is zeroed and no well opens', () => {
+      // The control for the test above: same setup, hold released early, so
+      // nothing but the well could have produced that motion.
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container, getByLabelText } = render(
+        <DoodleCanvas rng={seq([0])} sound={mockSound()} />,
+      );
+      fireEvent.click(getByLabelText('Open tuning panel'));
+      fireEvent.change(getByLabelText('Drift speed min (px/s)'), { target: { value: '0' } });
+      fireEvent.change(getByLabelText('Drift speed max (px/s)'), { target: { value: '0' } });
+      fireEvent.click(getByLabelText('Close tuning panel'));
+
+      const svg = stage(container);
+      fireEvent.pointerDown(svg, { clientX: 400, clientY: 500, pointerId: 9 });
+      fireEvent.pointerUp(svg, { clientX: 400, clientY: 500, pointerId: 9 });
+
+      for (let i = 0; i < 20; i += 1) {
+        act(() => { cbs[cbs.length - 1](16 + i * 16); });
+      }
+      expect(shapeX(container)).toBeCloseTo(400, 6);
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('releasing after the well engages spawns no shape', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container } = render(<DoodleCanvas rng={seq([0])} sound={mockSound()} />);
+      const svg = stage(container);
+
+      holdAndDriveFrames(svg, { holdMs: 800, cbs });
+      fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+      expect(shapeGroups(container)).toHaveLength(0);
+      // The ring goes with it.
+      act(() => { cbs[cbs.length - 1](64); });
+      expect(container.querySelector('[data-testid="well-engaged"]')).toBeNull();
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('releasing before wellHoldMs still spawns a shape', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container } = render(<DoodleCanvas rng={seq([0])} sound={mockSound()} />);
+      const svg = stage(container);
+
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      vi.setSystemTime(300); // under the 800ms default
+      act(() => { cbs[cbs.length - 1](16); });
+      fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+      expect(shapeGroups(container)).toHaveLength(1);
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('a second pointer landing during the hold cancels the well', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const sound = mockSound();
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container } = render(<DoodleCanvas rng={seq([0])} sound={sound} />);
+      const svg = stage(container);
+
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      vi.setSystemTime(400);
+      act(() => { cbs[cbs.length - 1](16); });
+      fireEvent.pointerDown(svg, { clientX: 520, clientY: 500, pointerId: 2 });
+      vi.setSystemTime(1200); // well past the hold for pointer 1
+      act(() => { cbs[cbs.length - 1](32); });
+
+      expect(sound.playWell).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-testid="well-engaged"]')).toBeNull();
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('moving past MOVE_THRESHOLD during the hold cancels the well', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const sound = mockSound();
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container } = render(<DoodleCanvas rng={seq([0])} sound={sound} />);
+      const svg = stage(container);
+
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      vi.setSystemTime(400);
+      act(() => { cbs[cbs.length - 1](16); });
+      fireEvent.pointerMove(svg, { clientX: 560, clientY: 500, pointerId: 1 });
+      vi.setSystemTime(1200);
+      act(() => { cbs[cbs.length - 1](32); });
+
+      expect(sound.playWell).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-testid="well-engaged"]')).toBeNull();
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('a small jitter during an open well does not close it', () => {
+      // A held finger jitters, and a toddler's hold jitters more than most, so
+      // an open well tolerates movement under MOVE_THRESHOLD (8px).
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container } = render(<DoodleCanvas rng={seq([0])} sound={mockSound()} />);
+      const svg = stage(container);
+
+      holdAndDriveFrames(svg, { holdMs: 800, cbs });
+      fireEvent.pointerMove(svg, { clientX: 503, clientY: 502, pointerId: 1 });
+      act(() => { cbs[cbs.length - 1](64); });
+
+      expect(container.querySelector('[data-testid="well-engaged"]')).not.toBeNull();
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('a hold in draw mode never opens a well and still draws a dot', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const sound = mockSound();
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container, getByLabelText } = render(
+        <DoodleCanvas rng={seq([0])} sound={sound} />,
+      );
+      fireEvent.click(getByLabelText('Switch to draw mode'));
+      const svg = stage(container);
+
+      holdAndDriveFrames(svg, { holdMs: 800, cbs });
+      fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+      expect(sound.playWell).not.toHaveBeenCalled();
+      expect(strokes(container)).toHaveLength(1);
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('a hold on a shape never opens a well', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const sound = mockSound();
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container } = render(<DoodleCanvas rng={seq([0])} sound={sound} />);
+      const svg = stage(container);
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 9 });
+      fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 9 });
+      const g = container.querySelector('svg > g[data-id]');
+
+      fireEvent.pointerDown(g, { clientX: 500, clientY: 500, pointerId: 1 });
+      vi.setSystemTime(1200);
+      act(() => { cbs[cbs.length - 1](16); });
+
+      expect(sound.playWell).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-testid="well-engaged"]')).toBeNull();
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('a hold while frozen never opens a well and still spawns on release', () => {
+      // A frozen tick returns before advance runs, so an engaged well could
+      // not pull anything; a pulsing ring over a still canvas would lie about
+      // what the gesture did.
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const sound = mockSound();
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container, getByLabelText } = render(
+        <DoodleCanvas rng={seq([0])} sound={sound} />,
+      );
+      fireEvent.click(getByLabelText('Slow motion'));
+      fireEvent.click(getByLabelText('Freeze'));
+      const svg = stage(container);
+
+      holdAndDriveFrames(svg, { holdMs: 800, cbs });
+      fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+
+      expect(sound.playWell).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-testid="well-engaged"]')).toBeNull();
+      expect(shapeGroups(container)).toHaveLength(1);
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('leaves a shape outside wellRadius alone', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container, getByLabelText } = render(
+        <DoodleCanvas rng={seq([0])} sound={mockSound()} />,
+      );
+      // Shrink the radius so the shape 100px away is comfortably outside it,
+      // and zero the drift so the only possible x motion is the well's.
+      fireEvent.click(getByLabelText('Open tuning panel'));
+      fireEvent.change(getByLabelText('Well radius (px)'), { target: { value: '50' } });
+      fireEvent.change(getByLabelText('Drift speed min (px/s)'), { target: { value: '0' } });
+      fireEvent.change(getByLabelText('Drift speed max (px/s)'), { target: { value: '0' } });
+      fireEvent.click(getByLabelText('Close tuning panel'));
+
+      const svg = stage(container);
+      fireEvent.pointerDown(svg, { clientX: 400, clientY: 500, pointerId: 9 });
+      fireEvent.pointerUp(svg, { clientX: 400, clientY: 500, pointerId: 9 });
+      const before = shapeGroups(container)[0].getAttribute('transform');
+
+      holdAndDriveFrames(svg, { holdMs: 800, cbs });
+      for (let i = 0; i < 10; i += 1) {
+        act(() => { cbs[cbs.length - 1](48 + i * 16); });
+      }
+
+      expect(shapeGroups(container)[0].getAttribute('transform')).toBe(before);
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('a well cancelled by a second pointer does not reopen when that pointer lifts', () => {
+      // Regression (I1): every cancel path used to null wellRef without
+      // resetting the holding pointer's own mode off 'well'. The eligibility
+      // check treats mode === 'well' as "already engaged" (so an open well
+      // doesn't cancel itself the frame after it opens), which meant a
+      // pointer whose well had just been cancelled still read as engaged
+      // the instant it became the sole pointer again — and since its real
+      // hold time was already past wellHoldMs, it re-engaged instantly with
+      // a second, spurious tone.
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const sound = mockSound();
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container } = render(<DoodleCanvas rng={seq([0])} sound={sound} />);
+      const svg = stage(container);
+
+      holdAndDriveFrames(svg, { holdMs: 800, cbs, pointerId: 1 });
+      expect(sound.playWell).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[data-testid="well-engaged"]')).not.toBeNull();
+
+      // A second finger lands -> cancels the well (existing behavior, see
+      // 'a second pointer landing during the hold cancels the well').
+      fireEvent.pointerDown(svg, { clientX: 520, clientY: 500, pointerId: 2 });
+      act(() => { cbs[cbs.length - 1](900); });
+      expect(container.querySelector('[data-testid="well-engaged"]')).toBeNull();
+
+      // The second finger lifts -> pointer 1 is the sole pointer again, with
+      // heldMs still far past wellHoldMs. Without the mode downgrade this
+      // reopens the well on this very next frame and fires playWell again.
+      fireEvent.pointerUp(svg, { clientX: 520, clientY: 500, pointerId: 2 });
+      act(() => { cbs[cbs.length - 1](916); });
+
+      expect(sound.playWell).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[data-testid="well-engaged"]')).toBeNull();
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('freezing mid-charge clears the charging ring', () => {
+      // Regression (I2): freezing used to leave the charging ring stuck on
+      // screen for as long as the freeze lasted, contradicting the
+      // recognizer's own stated intent that a frozen canvas can't be pulled
+      // by a well.
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container, getByLabelText } = render(
+        <DoodleCanvas rng={seq([0])} sound={mockSound()} />,
+      );
+      const svg = stage(container);
+
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      vi.setSystemTime(400); // past WELL_CHARGE_VISIBLE_MS, under the 800ms default hold
+      act(() => { cbs[cbs.length - 1](16); });
+      expect(container.querySelector('[data-testid="well-charging"]')).not.toBeNull();
+
+      fireEvent.click(getByLabelText('Slow motion'));
+      fireEvent.click(getByLabelText('Freeze'));
+
+      expect(container.querySelector('[data-testid="well-charging"]')).toBeNull();
+      expect(container.querySelector('[data-testid="well-engaged"]')).toBeNull();
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('freezing while engaged clears the ring, and it stays cleared through release', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const sound = mockSound();
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container, getByLabelText } = render(
+        <DoodleCanvas rng={seq([0])} sound={sound} />,
+      );
+      const svg = stage(container);
+
+      holdAndDriveFrames(svg, { holdMs: 800, cbs });
+      expect(sound.playWell).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[data-testid="well-engaged"]')).not.toBeNull();
+
+      fireEvent.click(getByLabelText('Slow motion'));
+      fireEvent.click(getByLabelText('Freeze'));
+      expect(container.querySelector('[data-testid="well-engaged"]')).toBeNull();
+
+      fireEvent.pointerUp(svg, { clientX: 500, clientY: 500, pointerId: 1 });
+      // A frozen tick still runs every frame (just returns early); it must
+      // not resurrect the ring or spawn a shape.
+      act(() => { cbs[cbs.length - 1](900); });
+
+      expect(container.querySelector('[data-testid="well-engaged"]')).toBeNull();
+      expect(container.querySelector('[data-testid="well-charging"]')).toBeNull();
+      expect(sound.playWell).toHaveBeenCalledTimes(1);
+      expect(shapeGroups(container)).toHaveLength(0);
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('a hold that loses eligibility while still charging keeps its original downTime and can still engage once eligible again', () => {
+      // cancelWell() only demotes a holder whose mode is 'well' (an already-
+      // ENGAGED well) to 'inert', which is what permanently blocks that hold
+      // from reopening (see 'a well cancelled by a second pointer does not
+      // reopen when that pointer lifts'). A holder that's still CHARGING
+      // (mode === null, moved === false) when eligibility is lost is left
+      // alone: its downTime is untouched, so once it becomes eligible again
+      // it can pick right back up — and, since its real elapsed hold time
+      // never stopped counting, engage immediately if that time is already
+      // past wellHoldMs, without waiting a fresh wellHoldMs from scratch.
+      vi.useFakeTimers();
+      vi.setSystemTime(0);
+      const sound = mockSound();
+      const { cbs, rectSpy, nowSpy } = driveOneFrame();
+      const { container } = render(<DoodleCanvas rng={seq([0])} sound={sound} />);
+      const svg = stage(container);
+
+      fireEvent.pointerDown(svg, { clientX: 500, clientY: 500, pointerId: 1 }); // downTime = 0
+      vi.setSystemTime(200); // charging, well under the 800ms default hold
+      act(() => { cbs[cbs.length - 1](16); });
+      expect(container.querySelector('[data-testid="well-charging"]')).not.toBeNull();
+
+      // A second finger lands -> eligibility is lost (2 pointers), cancelling
+      // the in-progress charge. Pointer 1 is only charging (mode still
+      // null), so cancelWell leaves its mode alone.
+      fireEvent.pointerDown(svg, { clientX: 520, clientY: 500, pointerId: 2 });
+      vi.setSystemTime(300);
+      act(() => { cbs[cbs.length - 1](32); });
+      expect(container.querySelector('[data-testid="well-charging"]')).toBeNull();
+      expect(sound.playWell).not.toHaveBeenCalled();
+
+      // The second finger lifts -> pointer 1 is the sole pointer again, and
+      // still eligible (never moved, never demoted). Its downTime is still
+      // 0, so by t=850 — past the *original* 800ms threshold, not a fresh
+      // one starting from when eligibility was regained at t=300 — it
+      // engages immediately.
+      fireEvent.pointerUp(svg, { clientX: 520, clientY: 500, pointerId: 2 });
+      vi.setSystemTime(850);
+      act(() => { cbs[cbs.length - 1](48); });
+
+      expect(sound.playWell).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[data-testid="well-engaged"]')).not.toBeNull();
+
+      nowSpy.mockRestore();
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    });
   });
 });

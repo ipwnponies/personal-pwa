@@ -24,9 +24,13 @@ import {
   spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles, COLLISION_BURST_MAX_AGE,
   DEFAULT_MAX_PARTICLES, DEFAULT_DUST_MAX_AGE,
 } from '../../lib/doodleParticles';
+import {
+  DEFAULT_WELL_HOLD_MS, DEFAULT_WELL_MAX_SPEED, DEFAULT_WELL_RADIUS, DEFAULT_WELL_STRENGTH,
+} from '../../lib/doodleWell';
 import Shape from './Shape';
 import Stroke from './Stroke';
 import Particles from './Particles';
+import Well from './Well';
 import TuningPanel from './TuningPanel';
 import styles from './doodle.module.css';
 
@@ -87,6 +91,10 @@ const DEFAULT_TUNING = {
   maxSpeed: DEFAULT_MAX_SPEED,
   tiltStrength: DEFAULT_TILT_STRENGTH,
   tiltDamping: DEFAULT_TILT_DAMPING,
+  wellRadius: DEFAULT_WELL_RADIUS,
+  wellStrength: DEFAULT_WELL_STRENGTH,
+  wellMaxSpeed: DEFAULT_WELL_MAX_SPEED,
+  wellHoldMs: DEFAULT_WELL_HOLD_MS,
 };
 
 // A fixed C-E-A triad drawn from the pentatonic NOTES scale. Fixed rather
@@ -129,6 +137,36 @@ export default function DoodleCanvas({ rng, sound }) {
   const addParticles = (newParticles) => {
     if (newParticles.length === 0) return;
     particlesRef.current = [...particlesRef.current, ...newParticles];
+  };
+  // Long-press gravity well: transient gesture state, so refs and not state.
+  // Read by the frame loop and rendered by <Well>, exactly as particlesRef is,
+  // and never entering the objects array or localStorage.
+  const wellRef = useRef(null);
+  const wellProgressRef = useRef(0);
+  // Every well-cancellation site (lost eligibility, movement past threshold,
+  // release, pointercancel, freeze) funnels through here. Clearing wellRef
+  // alone isn't enough for an already-ENGAGED well: the eligibility check
+  // below treats `mode === 'well'` as "already engaged" so an open well
+  // doesn't cancel itself the frame after it opens, but that same rule would
+  // silently re-admit and instantly re-engage a pointer whose well was just
+  // cancelled, the moment it becomes the sole pointer again. Downgrading the
+  // holding pointer's mode off 'well' to 'inert' (when it's still tracked)
+  // closes that loophole for good, for that hold.
+  //
+  // A holder that's still CHARGING (mode === null, not yet engaged) is left
+  // alone here — only wellRef/wellProgressRef are cleared, never the
+  // holder's mode. That's deliberate: demoting a charging holder to 'inert'
+  // would also suppress its tap-to-spawn on release, breaking "tap-to-spawn
+  // behaves exactly as today" for a press that loses and regains eligibility
+  // before ever engaging. So a charging hold CAN resume, and can even engage
+  // instantly once eligible again since its downTime is untouched — e.g.
+  // after a second pointer lifts, after freeze/unfreeze, or after switching
+  // briefly to draw mode and back.
+  const cancelWell = () => {
+    const holder = wellRef.current && pointersRef.current.get(wellRef.current.pointerId);
+    if (holder && holder.mode === 'well') holder.mode = 'inert';
+    wellRef.current = null;
+    wellProgressRef.current = 0;
   };
   const [pulsingIds, setPulsingIds] = useState(new Set());
   const [muted, setMuted] = useState(false);
@@ -317,6 +355,14 @@ export default function DoodleCanvas({ rng, sound }) {
         if (particlesRef.current.length > maxParticles) {
           particlesRef.current = particlesRef.current.slice(-maxParticles);
         }
+        // This branch returns before the well recognizer (and advance) run
+        // below, so a frozen canvas can't open, progress, or be pulled by a
+        // well. cancelWell() here only guarantees an already-ENGAGED well
+        // can't silently re-engage once unfrozen (see cancelWell) — it does
+        // NOT stop a still-charging hold from continuing to count once
+        // unfrozen, since that hold's downTime is left untouched; that's
+        // intentional, see cancelWell.
+        cancelWell();
         raf = requestAnimationFrame(tick);
         return;
       }
@@ -382,6 +428,65 @@ export default function DoodleCanvas({ rng, sound }) {
         const maxSpeed = tiltOn
           ? tuningRef.current.maxSpeed
           : Math.max(tuningRef.current.maxSpeed, tuningRef.current.maxThrowSpeed);
+
+        // Long-press well recognition, derived from the pointer map rather
+        // than a timer: this loop already runs every frame and every pointer
+        // entry already carries downTime, so there is no setTimeout lifecycle
+        // to clean up. Deliberately uses Date.now() and not the rAF timestamp
+        // — downTime comes from Date.now(), and performance.now() has a
+        // different epoch.
+        //
+        // An already-engaged holder keeps mode 'well' and moved true, so
+        // eligibility has to accept that state as well as the charging one,
+        // or the well would cancel on the frame right after it opened.
+        const {
+          wellHoldMs, wellRadius, wellStrength, wellMaxSpeed,
+        } = tuningRef.current;
+        const held = [...pointersRef.current.values()];
+        const holder = held.length === 1 ? held[0] : null;
+        const wellEligible = !!holder
+          && modeRef.current === 'shape'
+          && holder.shapeId === null
+          && (holder.mode === 'well' || (holder.mode === null && !holder.moved));
+        if (!wellEligible) {
+          cancelWell();
+        } else {
+          if (wellRef.current?.pointerId !== holder.pointerId) {
+            // The recognizer always reads holder.downTime directly (below,
+            // and again if this hold loses and regains eligibility) rather
+            // than a copy on wellRef, so no downTime field is kept here.
+            wellRef.current = {
+              pointerId: holder.pointerId,
+              x: holder.startX,
+              y: holder.startY,
+              engaged: false,
+            };
+          }
+          const heldMs = Date.now() - holder.downTime;
+          // A tuning panel can be typed down to 0 (HTML min is advisory), in
+          // which case the hold is instantaneous rather than a division by zero.
+          wellProgressRef.current = wellHoldMs > 0 ? heldMs / wellHoldMs : 1;
+          if (!wellRef.current.engaged && heldMs >= wellHoldMs) {
+            wellRef.current.engaged = true;
+            holder.mode = 'well';
+            // Suppresses the spawn on release as defense-in-depth only:
+            // onPointerUp has its own `mode === 'well'` branch that already
+            // returns before ever reaching the tap-to-spawn logic below, so
+            // this flag isn't what actually blocks the spawn — it's a
+            // second guard against that branch changing later.
+            holder.moved = true;
+            soundRef.current.playWell();
+          }
+        }
+        const well = wellRef.current?.engaged
+          ? {
+            x: wellRef.current.x,
+            y: wellRef.current.y,
+            radius: wellRadius,
+            strength: wellStrength,
+            maxSpeed: wellMaxSpeed,
+          }
+          : null;
         const events = advance(dt, { width: rect.width, height: rect.height }, grabbedIds, {
           wallRestitution: tuningRef.current.wallRestitution,
           stuckAfterS: tuningRef.current.stuckAfterS,
@@ -389,6 +494,7 @@ export default function DoodleCanvas({ rng, sound }) {
           accel,
           damping: tiltOn ? tuningRef.current.tiltDamping * tiltMagnitudeFraction : 0,
           maxSpeed,
+          well,
         });
         events.forEach((event) => {
           if (event.type === 'bounce' || event.type === 'wallBounce') {
@@ -416,6 +522,7 @@ export default function DoodleCanvas({ rng, sound }) {
     pulseTimers.current.clear();
     pointersRef.current.clear();
     pinchesRef.current.clear();
+    cancelWell();
   }, []);
 
   useEffect(() => () => clearTimeout(undoTimerRef.current), []);
@@ -620,6 +727,18 @@ export default function DoodleCanvas({ rng, sound }) {
 
     if (p.mode === 'inert') return;
 
+    if (p.mode === 'well') {
+      // Movement closes the well rather than dragging it — sweeping shapes
+      // around with a live well is a separate feature. MOVE_THRESHOLD applies
+      // here explicitly because engage already set moved, which bypasses the
+      // threshold logic further down; a held finger jitters, and a toddler's
+      // hold jitters more than most.
+      if (Math.hypot(pt.x - p.startX, pt.y - p.startY) < MOVE_THRESHOLD) return;
+      cancelWell();
+      p.mode = 'inert';
+      return;
+    }
+
     if (p.mode === 'pinch-member') {
       const pinch = pinchesRef.current.get(p.shapeId);
       if (!pinch) return;
@@ -690,6 +809,15 @@ export default function DoodleCanvas({ rng, sound }) {
       releaseShape(p.shapeId, tuningRef.current.wallImmunityS);
     }
 
+    if (p.mode === 'well') {
+      // Release closes the well on this frame. Shapes keep whatever velocity
+      // they gained: no snap-back, no decay. Clearing here rather than
+      // leaving it to the next frame's eligibility check avoids one stale
+      // frame of ring.
+      cancelWell();
+      return;
+    }
+
     if (p.mode === 'pinch-member') {
       endPinchMember(p, e.pointerId);
       return;
@@ -750,6 +878,10 @@ export default function DoodleCanvas({ rng, sound }) {
     // cancelled before any pointermove never actually dragged, so leave its
     // existing drift velocity alone instead of zeroing it.
     else if (p.mode === 'drag' && p.samples.length > 0) throwShape(p.shapeId, 0, 0);
+    // Palm rejection or an OS gesture can end a well without a pointerup.
+    else if (p.mode === 'well') {
+      cancelWell();
+    }
   };
 
   return (
@@ -767,6 +899,25 @@ export default function DoodleCanvas({ rng, sound }) {
           ? <Shape key={o.id} shape={o} pulsing={pulsingIds.has(o.id)} />
           : <Stroke key={o.id} stroke={o} />))}
         <Particles particles={particlesRef.current} />
+        <Well
+          // wellRef/wellProgressRef are refs: normally they're only ever
+          // rendered fresh because advance()'s setObjects call re-renders
+          // every unfrozen frame. The frozen branch above does call
+          // cancelWell() every tick, but that only mutates the refs — a ref
+          // write alone triggers no re-render, so reading those refs here
+          // would keep painting whatever was last rendered until the next
+          // unfrozen frame (or a pointer event that happens to trigger a
+          // re-render while frozen, e.g. releasing the held finger).
+          // Reading `timeScale` — React state, so toggling Freeze/unfreeze
+          // always re-renders — instead of the refs while frozen closes
+          // that gap: the ring can't outlive its own freeze on screen,
+          // matching "a frozen canvas can't be pulled by a well" from the
+          // recognizer's own comment above.
+          well={timeScale === 0 ? null : wellRef.current}
+          progress={timeScale === 0 ? 0 : wellProgressRef.current}
+          radius={tuning.wellRadius}
+          holdMs={tuning.wellHoldMs}
+        />
       </svg>
       <div className={styles.toolbar}>
         <button
@@ -867,6 +1018,7 @@ DoodleCanvas.propTypes = {
     playStroke: PropTypes.func.isRequired,
     playPop: PropTypes.func.isRequired,
     playChord: PropTypes.func.isRequired,
+    playWell: PropTypes.func.isRequired,
     setMuted: PropTypes.func.isRequired,
     isMuted: PropTypes.func.isRequired,
   }),

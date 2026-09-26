@@ -43,6 +43,18 @@ const FIELDS = [
   {
     key: 'tiltDamping', label: 'Tilt damping (1/s)', min: 0, max: 5, step: 0.1,
   },
+  {
+    key: 'wellRadius', label: 'Well radius (px)', min: 50, max: 600, step: 10,
+  },
+  {
+    key: 'wellStrength', label: 'Well strength (px/s²)', min: 0, max: 3000, step: 50,
+  },
+  {
+    key: 'wellMaxSpeed', label: 'Well max speed (px/s)', min: 50, max: 2000, step: 50,
+  },
+  {
+    key: 'wellHoldMs', label: 'Well hold (ms)', min: 200, max: 2000, step: 50,
+  },
 ];
 
 export default function TuningPanel({
@@ -99,6 +111,10 @@ TuningPanel.propTypes = {
     maxSpeed: PropTypes.number.isRequired,
     tiltStrength: PropTypes.number.isRequired,
     tiltDamping: PropTypes.number.isRequired,
+    wellRadius: PropTypes.number.isRequired,
+    wellStrength: PropTypes.number.isRequired,
+    wellMaxSpeed: PropTypes.number.isRequired,
+    wellHoldMs: PropTypes.number.isRequired,
   }).isRequired,
   onChange: PropTypes.func.isRequired,
   onReset: PropTypes.func.isRequired,

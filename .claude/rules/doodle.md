@@ -16,12 +16,14 @@ Tap-and-draw musical sandbox for young children. Already split cleanly: page is 
 - `components/doodle/Stroke.jsx` — freehand line rendering.
 - `components/doodle/Shape.jsx` — discrete shape stamps.
 - `components/doodle/Particles.jsx` — renders the particle system (bursts/spirals/squash/dust).
+- `components/doodle/Well.jsx` — renders the long-press gravity well's charging ring and engaged ring.
 - `components/doodle/TuningPanel.jsx` — overlay of adjustable number inputs for particle/physics feel constants (see "Tuning panel" convention below).
 - `components/doodle/doodle.module.css` — component-scoped styles.
 - `lib/doodleShapes.js` — shape creation/split/merge/drift, pure functions.
 - `lib/doodlePhysics.js` — `resolveCollisions`: pairwise bounce/merge physics.
 - `lib/doodleWalls.js` — drawn strokes as static collision geometry: `buildWalls` (live, bbox-cached) and `resolveWallCollisions` (circle-against-capsule). Pure, and deliberately takes no `rng` — wall collision makes no random choice.
 - `lib/doodleParticles.js` — particle spawn/advance helpers.
+- `lib/doodleWell.js` — `applyWell`: linear-falloff gravity-well force, pure function.
 - `lib/useDoodleObjects.js` — the objects-array hook (spawn/move/transform/pop/advance/persist).
 - Tests co-located: `DoodleCanvas.test.jsx`, `Shape.test.jsx`, `TuningPanel.test.jsx`, `lib/doodle*.test.js`.
 

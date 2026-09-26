@@ -17,6 +17,10 @@ const baseTuning = {
   maxSpeed: 600,
   tiltStrength: 400,
   tiltDamping: 1.2,
+  wellRadius: 200,
+  wellStrength: 600,
+  wellMaxSpeed: 400,
+  wellHoldMs: 800,
 };
 
 describe('TuningPanel', () => {
@@ -94,5 +98,30 @@ describe('TuningPanel', () => {
     );
     fireEvent.change(getByLabelText('Tilt strength (px/s²)'), { target: { value: '800' } });
     expect(onChange).toHaveBeenCalledWith('tiltStrength', 800);
+  });
+
+  it('renders a row for every gravity-well tunable', () => {
+    const { getByLabelText } = render(
+      <TuningPanel tuning={baseTuning} onChange={() => {}} onReset={() => {}} onClose={() => {}} />,
+    );
+    expect(getByLabelText('Well radius (px)').value).toBe('200');
+    expect(getByLabelText('Well strength (px/s²)').value).toBe('600');
+    expect(getByLabelText('Well max speed (px/s)').value).toBe('400');
+    expect(getByLabelText('Well hold (ms)').value).toBe('800');
+  });
+
+  it('reports every gravity-well change through onChange', () => {
+    const onChange = vi.fn();
+    const { getByLabelText } = render(
+      <TuningPanel tuning={baseTuning} onChange={onChange} onReset={() => {}} onClose={() => {}} />,
+    );
+    fireEvent.change(getByLabelText('Well radius (px)'), { target: { value: '350' } });
+    fireEvent.change(getByLabelText('Well strength (px/s²)'), { target: { value: '1200' } });
+    fireEvent.change(getByLabelText('Well max speed (px/s)'), { target: { value: '900' } });
+    fireEvent.change(getByLabelText('Well hold (ms)'), { target: { value: '1000' } });
+    expect(onChange).toHaveBeenCalledWith('wellRadius', 350);
+    expect(onChange).toHaveBeenCalledWith('wellStrength', 1200);
+    expect(onChange).toHaveBeenCalledWith('wellMaxSpeed', 900);
+    expect(onChange).toHaveBeenCalledWith('wellHoldMs', 1000);
   });
 });
