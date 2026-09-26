@@ -11,7 +11,15 @@ import {
 import { clamp } from '../../lib/random';
 import {
   MIN_SIZE, MAX_SIZE, DEFAULT_MAX_THROW_SPEED, THROW_SAMPLE_WINDOW_MS, throwVelocity,
+  NOTES, scatterShapes, DEFAULT_SHAKE_IMPULSE, DEFAULT_MAX_SPEED,
 } from '../../lib/doodleShapes';
+import {
+  useMotionPermission, PERMISSION_NEEDED, PERMISSION_DENIED,
+} from '../../lib/useMotionPermission';
+import { useShakeDetection } from '../../lib/useShakeDetection';
+import {
+  useDeviceTilt, tiltToAcceleration, tiltDampingFraction, DEFAULT_TILT_STRENGTH, DEFAULT_TILT_DAMPING,
+} from '../../lib/useDeviceTilt';
 import {
   spawnBurst, spawnSpiral, spawnSquashPoof, spawnDust, advanceParticles, COLLISION_BURST_MAX_AGE,
   DEFAULT_MAX_PARTICLES, DEFAULT_DUST_MAX_AGE,
@@ -27,6 +35,7 @@ const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_RADIUS = MOVE_THRESHOLD * 3; // proximity a second tap must land within to complete a double-tap
 const MUTE_KEY = 'doodle-muted';
 const TRAILS_KEY = 'doodle-trails';
+const TILT_KEY = 'doodle-tilt';
 const MODE_KEY = 'doodle-mode';
 const TUNING_KEY = 'doodle-tuning';
 const TIME_SCALE_KEY = 'doodle-time-scale';
@@ -74,12 +83,21 @@ const DEFAULT_TUNING = {
   wallRestitution: DEFAULT_WALL_RESTITUTION,
   stuckAfterS: DEFAULT_STUCK_AFTER_S,
   wallImmunityS: DEFAULT_WALL_IMMUNITY_S,
+  shakeImpulse: DEFAULT_SHAKE_IMPULSE,
+  maxSpeed: DEFAULT_MAX_SPEED,
+  tiltStrength: DEFAULT_TILT_STRENGTH,
+  tiltDamping: DEFAULT_TILT_DAMPING,
 };
+
+// A fixed C-E-A triad drawn from the pentatonic NOTES scale. Fixed rather
+// than randomized so a shake always sounds like the same event, and
+// consonant with whatever notes the shapes themselves are carrying.
+const SHAKE_CHORD = [NOTES[0], NOTES[2], NOTES[4]];
 
 export default function DoodleCanvas({ rng, sound }) {
   const {
     objects, spawnShape, startStroke, appendStrokePoint, moveShape, throwShape, transformShape,
-    popShape, releaseShape, advance, clear, restore,
+    popShape, releaseShape, applyToShapes, advance, clear, restore,
   } = useDoodleObjects(rng);
 
   const svgRef = useRef(null);
@@ -115,6 +133,9 @@ export default function DoodleCanvas({ rng, sound }) {
   const [pulsingIds, setPulsingIds] = useState(new Set());
   const [muted, setMuted] = useState(false);
   const [trailsEnabled, setTrailsEnabled] = useState(true);
+  // Default off: tilt fights the drawing and pinching gestures (those want a
+  // flat, steady device), so it is opt-in rather than forced on everyone.
+  const [tiltEnabled, setTiltEnabled] = useState(false);
   // 'shape': tap spawns a shape, drag on empty canvas is ignored. 'draw': drag
   // draws a stroke, tap draws a dot. Keeps the two interaction styles from
   // fighting each other (a drag meant to nudge a half-built shape no longer
@@ -124,10 +145,21 @@ export default function DoodleCanvas({ rng, sound }) {
   const timeScaleRef = useRef(timeScale);
   timeScaleRef.current = timeScale;
 
+  // iOS gates devicemotion/deviceorientation behind a tap; everywhere else
+  // `motionEnabled` is true from mount with no button ever shown.
+  const { status: permissionStatus, request: requestMotionPermission, motionEnabled } = useMotionPermission();
+
   const trailsEnabledRef = useRef(trailsEnabled);
   trailsEnabledRef.current = trailsEnabled;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+
+  // Subscribe to orientation only when the toggle is on **and** motion is
+  // permitted (iOS gates deviceorientation the same way it gates devicemotion).
+  const tiltActive = tiltEnabled && motionEnabled;
+  const orientationRef = useDeviceTilt(tiltActive);
+  const tiltActiveRef = useRef(tiltActive);
+  tiltActiveRef.current = tiltActive;
 
   const [tuning, setTuning] = useState(DEFAULT_TUNING);
   const tuningRef = useRef(tuning);
@@ -174,6 +206,24 @@ export default function DoodleCanvas({ rng, sound }) {
       // ignore — preference just won't persist
     }
   }, [trailsEnabled]);
+
+  // Load + persist the tilt-gravity preference (default off — see the state
+  // declaration above for why).
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(TILT_KEY);
+      if (stored !== null) setTiltEnabled(stored === 'true');
+    } catch {
+      // ignore — default to disabled
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(TILT_KEY, String(tiltEnabled));
+    } catch {
+      // ignore — preference just won't persist
+    }
+  }, [tiltEnabled]);
 
   // Load + persist the draw/shape mode preference.
   useEffect(() => {
@@ -306,10 +356,39 @@ export default function DoodleCanvas({ rng, sound }) {
           });
           addParticles(dust);
         }
+        const { beta, gamma } = orientationRef.current;
+        const tiltOn = tiltActiveRef.current;
+        const { tiltStrength } = tuningRef.current;
+        const accel = tiltOn ? tiltToAcceleration(beta, gamma, tiltStrength) : undefined;
+        // Damping is scaled by how strongly the device is actually tilted,
+        // rather than applied at full strength whenever the toggle is
+        // merely on. A flat desktop browser or a tablet resting level on a
+        // table reports beta=gamma=0 while the toggle is on; applying full
+        // damping there brought every shape to a dead stop within a few
+        // seconds with no gravity to show for it.
+        const tiltMagnitudeFraction = tiltOn ? tiltDampingFraction(beta, gamma, tiltStrength) : 0;
+        // A coasting throw's ceiling must never sit below what the tuning
+        // panel promises: throwVelocity clamps a release to
+        // tuning.maxThrowSpeed, but this clamp runs every tick after that,
+        // and tuning.maxSpeed defaults lower (600) than maxThrowSpeed's
+        // usable range (up to 3000) — an unclamped max() would otherwise
+        // silently undo a raised throw speed on the very next frame.
+        // While tilt is on, though, this ceiling is the only thing standing
+        // between a shape under constant acceleration and tunneling through
+        // a drawn wall in one frame (see DEFAULT_MAX_SPEED in
+        // doodleShapes.js) — raising it to match maxThrowSpeed there would
+        // let sustained gravity, not just a one-shot throw, reach speeds the
+        // wall-collision check was never sized for.
+        const maxSpeed = tiltOn
+          ? tuningRef.current.maxSpeed
+          : Math.max(tuningRef.current.maxSpeed, tuningRef.current.maxThrowSpeed);
         const events = advance(dt, { width: rect.width, height: rect.height }, grabbedIds, {
           wallRestitution: tuningRef.current.wallRestitution,
           stuckAfterS: tuningRef.current.stuckAfterS,
           wallImmunityS: tuningRef.current.wallImmunityS,
+          accel,
+          damping: tiltOn ? tuningRef.current.tiltDamping * tiltMagnitudeFraction : 0,
+          maxSpeed,
         });
         events.forEach((event) => {
           if (event.type === 'bounce' || event.type === 'wallBounce') {
@@ -445,6 +524,27 @@ export default function DoodleCanvas({ rng, sound }) {
       addParticles(spawnSquashPoof(shape.x, shape.y, shape.color));
     }
   };
+
+  // A shake pushes every shape outward from the centre of the stage, sprays
+  // a burst from each, and rolls a chord. Shapes are pushed, never popped —
+  // a shake should feel like a big gust, not a reset.
+  const handleShake = useCallback(() => {
+    const shapes = objectsRef.current.filter((o) => o.kind === 'shape');
+    if (shapes.length === 0) return;
+    const rect = svgRef.current?.getBoundingClientRect();
+    const centerX = (rect?.width || 0) / 2;
+    const centerY = (rect?.height || 0) / 2;
+    const { shakeImpulse, maxSpeed } = tuningRef.current;
+    const burst = [];
+    shapes.forEach((shape) => {
+      burst.push(...spawnBurst(shape.x, shape.y, shape.color, null, COLLISION_BURST_MAX_AGE));
+    });
+    addParticles(burst);
+    applyToShapes((current) => scatterShapes(current, centerX, centerY, rng, shakeImpulse, maxSpeed));
+    soundRef.current.playChord(SHAKE_CHORD);
+  }, [applyToShapes, rng]);
+
+  useShakeDetection(handleShake);
 
   // Note: we rely on the browser's implicit pointer capture — on touch, the
   // pointerdown target keeps receiving move/up events even if the finger
@@ -701,6 +801,26 @@ export default function DoodleCanvas({ rng, sound }) {
         >
           {trailsEnabled ? '💨' : '🚫'}
         </button>
+        {motionEnabled && (
+          <button
+            type="button"
+            className={styles.toolButton}
+            aria-label={tiltEnabled ? 'Disable tilt gravity' : 'Enable tilt gravity'}
+            onClick={() => setTiltEnabled((t) => !t)}
+          >
+            {tiltEnabled ? '🌍' : '🌑'}
+          </button>
+        )}
+        {(permissionStatus === PERMISSION_NEEDED || permissionStatus === PERMISSION_DENIED) && (
+          <button
+            type="button"
+            className={styles.toolButton}
+            aria-label={permissionStatus === PERMISSION_DENIED ? 'Motion controls blocked' : 'Enable motion controls'}
+            onClick={requestMotionPermission}
+          >
+            {permissionStatus === PERMISSION_DENIED ? '🚷' : '📱'}
+          </button>
+        )}
         <button
           type="button"
           className={styles.toolButton}
@@ -746,6 +866,7 @@ DoodleCanvas.propTypes = {
     playNote: PropTypes.func.isRequired,
     playStroke: PropTypes.func.isRequired,
     playPop: PropTypes.func.isRequired,
+    playChord: PropTypes.func.isRequired,
     setMuted: PropTypes.func.isRequired,
     isMuted: PropTypes.func.isRequired,
   }),

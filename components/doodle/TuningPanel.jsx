@@ -31,6 +31,18 @@ const FIELDS = [
   {
     key: 'wallImmunityS', label: 'Wall immunity (s)', min: 0.5, max: 10, step: 0.5,
   },
+  {
+    key: 'shakeImpulse', label: 'Shake impulse (px/s)', min: 0, max: 1000, step: 10,
+  },
+  {
+    key: 'maxSpeed', label: 'Max shape speed (px/s)', min: 50, max: 2000, step: 50,
+  },
+  {
+    key: 'tiltStrength', label: 'Tilt strength (px/s²)', min: 0, max: 2000, step: 50,
+  },
+  {
+    key: 'tiltDamping', label: 'Tilt damping (1/s)', min: 0, max: 5, step: 0.1,
+  },
 ];
 
 export default function TuningPanel({
@@ -83,6 +95,10 @@ TuningPanel.propTypes = {
     wallRestitution: PropTypes.number.isRequired,
     stuckAfterS: PropTypes.number.isRequired,
     wallImmunityS: PropTypes.number.isRequired,
+    shakeImpulse: PropTypes.number.isRequired,
+    maxSpeed: PropTypes.number.isRequired,
+    tiltStrength: PropTypes.number.isRequired,
+    tiltDamping: PropTypes.number.isRequired,
   }).isRequired,
   onChange: PropTypes.func.isRequired,
   onReset: PropTypes.func.isRequired,
