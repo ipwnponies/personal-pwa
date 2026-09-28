@@ -7,6 +7,7 @@ import DiceRoll from '../../../pages/random/DiceRoll';
 afterEach(() => {
   delete navigator.share;
   delete navigator.clipboard;
+  localStorage.clear();
 });
 
 function stubShare() {
@@ -138,5 +139,58 @@ describe('DiceRoll', () => {
 
     expect(countBadges()).toBe(3);
     expect(screen.getByText(/Sum:/)).toBeInTheDocument();
+  });
+});
+
+describe('DiceRoll history', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('shows no history before the first roll', () => {
+    render(<DiceRoll />);
+    expect(screen.queryByText('Recent rolls')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^CLEAR$/ })).not.toBeInTheDocument();
+  });
+
+  it('records a single-die roll with its config', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    render(<DiceRoll />);
+
+    fireEvent.click(screen.getByRole('button', { name: /^ROLL$/i }));
+
+    expect(screen.getByText('Recent rolls')).toBeInTheDocument();
+    expect(screen.getByText('1d6 (1-6): 1')).toBeInTheDocument();
+  });
+
+  it('records every value and the total for several dice', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    render(<DiceRoll />);
+    setDiceCount(3);
+
+    fireEvent.click(screen.getByRole('button', { name: /^ROLL$/i }));
+
+    expect(screen.getByText('3d6 (1-6): 1, 1, 1 = 3')).toBeInTheDocument();
+  });
+
+  it('restores stored history on mount', () => {
+    localStorage.setItem(
+      'random-dice-history',
+      JSON.stringify([{ id: 'a', label: '2d6 (1-6): 3, 4 = 7', timestamp: 0 }]),
+    );
+    render(<DiceRoll />);
+    expect(screen.getByText('2d6 (1-6): 3, 4 = 7')).toBeInTheDocument();
+  });
+
+  it('CLEAR empties the history and it stays empty after a remount', () => {
+    const { unmount } = render(<DiceRoll />);
+    fireEvent.click(screen.getByRole('button', { name: /^ROLL$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^CLEAR$/ }));
+
+    expect(screen.queryByText('Recent rolls')).not.toBeInTheDocument();
+    unmount();
+
+    render(<DiceRoll />);
+    expect(screen.queryByText('Recent rolls')).not.toBeInTheDocument();
   });
 });
