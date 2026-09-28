@@ -12,6 +12,10 @@ paths:
   - "lib/useShakeDetection.test.js"
   - "lib/useShareResult.js"
   - "lib/useShareResult.test.js"
+  - "lib/usePersistentState.js"
+  - "lib/usePersistentState.test.js"
+  - "lib/usePersistentHistory.js"
+  - "lib/usePersistentHistory.test.js"
 scope: random
 ---
 
