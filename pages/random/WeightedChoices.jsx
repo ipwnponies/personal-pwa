@@ -16,6 +16,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { weightedRandomChoice, generateId, pushHistoryEntry, reorderById } from '../../lib/random';
 import ShareResultButton from './ShareResultButton';
+import HistoryList from '../../components/random/HistoryList';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import { useSoundCue } from '../../components/random/SoundContext';
 import styles from './index.module.css';
@@ -764,22 +765,7 @@ export default function WeightedChoices() {
         </div>
       )}
 
-      {expandedHistory.length > 0 && (
-        <div className={styles.historyList}>
-          <span className={styles.historyTitle}>Recent picks</span>
-          {expandedHistory.map((entry) => (
-            <div key={entry.id} className={styles.historyRow}>
-              <span className={styles.historyLabel}>{entry.label}</span>
-              <span className={styles.historyTime}>
-                {new Date(entry.timestamp).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      <HistoryList title="Recent picks" entries={expandedHistory} />
     </div>
   );
 }

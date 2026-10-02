@@ -1,11 +1,25 @@
 import React, { useState } from 'react';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import ShareResultButton from './ShareResultButton';
+import HistoryList from '../../components/random/HistoryList';
+import { usePersistentHistory } from '../../lib/usePersistentHistory';
 import { useSoundCue } from '../../components/random/SoundContext';
 import styles from './index.module.css';
 
 const rollDice = (lowerBound, upperBound) =>
   Math.floor(Math.random() * (upperBound - lowerBound + 1)) + lowerBound;
+
+const DICE_HISTORY_KEY = 'random-dice-history';
+const MAX_DICE_HISTORY = 20;
+
+// Config is baked into the label so later bound changes never rewrite old
+// entries: "3d6 (1-6): 2, 4, 5 = 11", or "1d6 (1-6): 4" for a single die.
+const formatRollLabel = (values, lowerBound, upperBound) => {
+  const config = `${values.length}d${upperBound - lowerBound + 1} (${lowerBound}-${upperBound})`;
+  if (values.length === 1) return `${config}: ${values[0]}`;
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return `${config}: ${values.join(', ')} = ${total}`;
+};
 
 export default function DiceRoll() {
   const [lowerBound, setLowerBound] = useState(1);
@@ -18,6 +32,7 @@ export default function DiceRoll() {
   // SoundContext value changing identity when the mute toggle is clicked.
   const [randomValues, setRandomValues] = useState([]);
   const play = useSoundCue();
+  const history = usePersistentHistory(DICE_HISTORY_KEY, MAX_DICE_HISTORY);
 
   const lower = useSwipeNumber(lowerBound, setLowerBound, 0, 100);
   const upper = useSwipeNumber(upperBound, setUpperBound, 1, 100);
@@ -29,9 +44,9 @@ export default function DiceRoll() {
     randomValues.length > 1 ? `${randomValues.join(', ')} (sum: ${sum})` : String(randomValues[0]);
 
   const handleRoll = () => {
-    setRandomValues(
-      [...Array(numDice).keys()].map(() => rollDice(lowerBound, upperBound)),
-    );
+    const values = [...Array(numDice).keys()].map(() => rollDice(lowerBound, upperBound));
+    setRandomValues(values);
+    history.push({ label: formatRollLabel(values, lowerBound, upperBound) });
     play('roll');
   };
 
@@ -125,6 +140,12 @@ export default function DiceRoll() {
           )}
           <ShareResultButton text={shareText} />
         </div>
+      )}
+      <HistoryList title="Recent rolls" entries={history.entries} />
+      {history.entries.length > 0 && (
+        <button type="button" className={styles.clearButton} onClick={history.clear}>
+          CLEAR
+        </button>
       )}
     </div>
   );

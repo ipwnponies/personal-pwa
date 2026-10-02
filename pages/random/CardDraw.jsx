@@ -1,24 +1,54 @@
 import React, { useState } from 'react';
 import { buildDeck, drawCards, shuffle } from '../../lib/random';
 import { useFlickGesture } from '../../lib/useFlickGesture';
+import { usePersistentState } from '../../lib/usePersistentState';
 import { useSwipeNumber } from '../../lib/useSwipeNumber';
 import { useSoundCue } from '../../components/random/SoundContext';
 import indexStyles from './index.module.css';
 import styles from './CardDraw.module.css';
 
+const CARDS_STORAGE_KEY = 'random-cards';
+const DECK_SIZE = 52;
+
+// Lazy fallback: shuffles on first render. Safe because this tab is never
+// rendered during prerender or hydration (react-tabs renders only tab 0).
+const freshCards = () => ({ remaining: shuffle(buildDeck()), draws: [] });
+
+const isCard = (card) =>
+  card !== null &&
+  typeof card === 'object' &&
+  typeof card.suit === 'string' &&
+  typeof card.rank === 'string';
+
+// Remaining deck and drawn pile live under one key so they can never
+// disagree; together they must be exactly one full deck.
+const isCardState = (value) => {
+  if (value === null || typeof value !== 'object') return false;
+  if (!Array.isArray(value.remaining) || !Array.isArray(value.draws)) return false;
+  if (!value.draws.every(Array.isArray)) return false;
+  const all = [...value.remaining, ...value.draws.flat()];
+  return (
+    all.length === DECK_SIZE &&
+    all.every(isCard) &&
+    new Set(all.map((card) => `${card.rank}${card.suit}`)).size === DECK_SIZE
+  );
+};
+
 export default function CardDraw() {
-  const [deck, setDeck] = useState(() => shuffle(buildDeck()));
+  const [cards, setCards] = usePersistentState(CARDS_STORAGE_KEY, freshCards, isCardState);
   const [drawCount, setDrawCount] = useState(1);
-  const [drawn, setDrawn] = useState([]);
   const play = useSoundCue();
+
+  const { remaining, draws } = cards;
+  const lastDraw = draws.length > 0 ? draws[0] : [];
+  const pile = draws.flat();
 
   const count = useSwipeNumber(drawCount, setDrawCount, 1, 52);
 
   const performDraw = (n) => {
-    if (deck.length < n) return;
-    const result = drawCards(deck, n);
-    setDrawn(result.drawn);
-    setDeck(result.remaining);
+    if (remaining.length < n) return;
+    const result = drawCards(remaining, n);
+    setCards({ remaining: result.remaining, draws: [result.drawn, ...draws] });
     play('draw');
   };
 
@@ -28,11 +58,10 @@ export default function CardDraw() {
   const flick = useFlickGesture(handleFlickDraw);
 
   const handleNewDeck = () => {
-    setDeck(shuffle(buildDeck()));
-    setDrawn([]);
+    setCards(freshCards());
   };
 
-  const canDraw = deck.length >= drawCount;
+  const canDraw = remaining.length >= drawCount;
 
   return (
     <div className={indexStyles.container}>
@@ -68,7 +97,7 @@ export default function CardDraw() {
       </div>
 
       <div className={styles.deckRow}>
-        <span className={styles.deckCount}>{deck.length} cards left</span>
+        <span className={styles.deckCount}>{remaining.length} cards left</span>
         <button type="button" className={styles.newDeckButton} onClick={handleNewDeck}>
           NEW DECK
         </button>
@@ -83,11 +112,25 @@ export default function CardDraw() {
         DRAW
       </button>
 
-      {drawn.length > 0 && (
+      {lastDraw.length > 0 && (
         <div className={indexStyles.result}>
           <div className={styles.cardsRow}>
-            {drawn.map((card) => (
+            {lastDraw.map((card) => (
               <span key={`${card.rank}${card.suit}`} className={styles.card}>
+                {card.rank}
+                {card.suit}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pile.length > 0 && (
+        <div className={styles.pile}>
+          <span className={styles.pileTitle}>Drawn ({pile.length})</span>
+          <div className={styles.pileCards}>
+            {pile.map((card) => (
+              <span key={`${card.rank}${card.suit}`} className={styles.pileCard}>
                 {card.rank}
                 {card.suit}
               </span>
