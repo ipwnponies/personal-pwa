@@ -1104,6 +1104,26 @@ describe('WeightedChoices grouped structure', () => {
       expect(screen.getByTestId('choiceWheel')).toBeInTheDocument();
     });
 
+    it('picks when the wheel itself is clicked', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByRole('button', { name: 'Spin the wheel' }));
+
+      await waitFor(() => expect(screen.getByText('50% chance')).toBeInTheDocument());
+    });
+
     it('PICK still returns a result matching a valid choice label with the spinner present', async () => {
       const groupsData = [
         {
