@@ -962,15 +962,15 @@ describe('WeightedChoices grouped structure', () => {
       // transition is in flight — the pointer must land on the wedge it
       // was animated toward, not one recomputed from the shrunken pool.
       // jsdom normalizes hex colors to rgb() in computed style strings.
-      expect(wheel.style.background).toContain('rgb(2, 136, 209) 240deg 360deg');
+      expect(wheel.style.background).toContain('rgb(25, 158, 112) 240deg 359deg');
 
       fireEvent.transitionEnd(wheel);
 
       await waitFor(() => {
-        // Second + Third remain, each now a 180deg half.
-        expect(wheel.style.background).toBe(
-          'conic-gradient(rgb(79, 195, 247) 0deg 180deg, rgb(129, 212, 250) 180deg 360deg)',
-        );
+        // Second + Third remain, each now a 180deg half, and each keeps
+        // the colour it had before First was drawn.
+        expect(wheel.style.background).toContain('rgb(217, 89, 38) 0deg 179deg');
+        expect(wheel.style.background).toContain('rgb(25, 158, 112) 180deg 359deg');
       });
     });
 
@@ -1102,6 +1102,108 @@ describe('WeightedChoices grouped structure', () => {
 
       render(<WeightedChoices />);
       expect(screen.getByTestId('choiceWheel')).toBeInTheDocument();
+    });
+
+    it('gives each choice row a swatch matching its wedge colour', () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+            { id: 'c3', label: 'Third', weight: 2 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+      const swatchColors = screen
+        .getAllByTestId('choiceSwatch')
+        .map((s) => s.style.backgroundColor);
+
+      // Every row gets a distinct colour, and each one is the colour of
+      // that choice's wedge, in the same order.
+      expect(new Set(swatchColors).size).toBe(3);
+      const { background } = screen.getByTestId('choiceWheel').style;
+      expect(background).toContain(`${swatchColors[0]} 0deg 89deg`);
+      expect(background).toContain(`${swatchColors[1]} 90deg 179deg`);
+      expect(background).toContain(`${swatchColors[2]} 180deg 359deg`);
+    });
+
+    it('separates every pair of touching wedges, including last and first', () => {
+      // Nine choices: the ninth reuses the first's colour and touches it
+      // around the circle, so only the separator keeps them apart.
+      const choices = Array.from({ length: 9 }, (_, i) => ({
+        id: `c${i}`,
+        label: `Choice ${i}`,
+        weight: 1,
+      }));
+      localStorage.setItem(
+        'random-choices',
+        JSON.stringify([{ id: 'g1', name: 'Test Group', choices }]),
+      );
+
+      render(<WeightedChoices />);
+      const { background } = screen.getByTestId('choiceWheel').style;
+      const separators = background.match(/rgb\(26, 26, 46\) [\d.]+deg [\d.]+deg/g) || [];
+
+      expect(separators).toHaveLength(9);
+      expect(background).toContain('rgb(26, 26, 46) 359deg 360deg');
+    });
+
+    it('marks swatches of rows that have no wedge on the wheel', () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Zero', weight: 0 },
+            { id: 'c3', label: '', weight: 1 },
+            { id: 'c4', label: 'Fourth', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+
+      render(<WeightedChoices />);
+      const onWheel = screen
+        .getAllByTestId('choiceSwatch')
+        .map((s) => s.getAttribute('data-on-wheel'));
+
+      expect(onWheel).toEqual(['true', 'false', 'false', 'true']);
+    });
+
+    it('marks the swatch of a drawn choice as off the wheel in No repeats mode', async () => {
+      const groupsData = [
+        {
+          id: 'g1',
+          name: 'Test Group',
+          choices: [
+            { id: 'c1', label: 'First', weight: 1 },
+            { id: 'c2', label: 'Second', weight: 1 },
+            { id: 'c3', label: 'Third', weight: 1 },
+          ],
+        },
+      ];
+      localStorage.setItem('random-choices', JSON.stringify(groupsData));
+      vi.spyOn(Math, 'random').mockReturnValue(0.1);
+
+      render(<WeightedChoices />);
+      fireEvent.click(screen.getByLabelText('No repeats'));
+      fireEvent.click(screen.getByRole('button', { name: /PICK/i }));
+      await waitFor(() => expect(screen.getByText('33% chance')).toBeInTheDocument());
+
+      const onWheel = () =>
+        screen.getAllByTestId('choiceSwatch').map((s) => s.getAttribute('data-on-wheel'));
+      // Mid-spin the wheel still shows the drawn choice's wedge (the pointer
+      // is landing on it), so its swatch must still match.
+      expect(onWheel()).toEqual(['true', 'true', 'true']);
+
+      fireEvent.transitionEnd(screen.getByTestId('choiceWheel'));
+      await waitFor(() => expect(onWheel()).toEqual(['false', 'true', 'true']));
     });
 
     it('picks when the wheel itself is clicked', async () => {
