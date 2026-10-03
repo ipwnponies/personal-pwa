@@ -3,6 +3,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import WeightedChoices, { RowPointerSensor } from '../../../pages/random/WeightedChoices';
 
+// jsdom doesn't implement scrollIntoView; PICK now scrolls the result into
+// view on every successful pick. Same approach as
+// __tests__/pages/random/index.test.jsx.
+beforeEach(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
+
 describe('WeightedChoices grouped structure', () => {
   beforeEach(() => {
     localStorage.clear();

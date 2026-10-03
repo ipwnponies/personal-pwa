@@ -23,6 +23,13 @@ vi.mock('../../../components/random/SoundContext', async (importOriginal) => {
 
 const renderWithProvider = (ui) => render(<SoundProvider>{ui}</SoundProvider>);
 
+// jsdom doesn't implement scrollIntoView; WeightedChoices' PICK now scrolls
+// the result into view on every successful pick. Same approach as
+// __tests__/pages/random/index.test.jsx.
+beforeEach(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
+
 describe('Random tab sound cues', () => {
   beforeEach(() => {
     localStorage.clear();
