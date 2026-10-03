@@ -653,7 +653,7 @@ export default function WeightedChoices() {
               onClick={handlePick}
               role="button"
               tabIndex={0}
-              aria-label="Pick"
+              aria-label="Spin the wheel"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
