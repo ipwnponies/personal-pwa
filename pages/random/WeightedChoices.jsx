@@ -640,9 +640,19 @@ export default function WeightedChoices() {
             <div className={wheelStyles.wheelPointer} />
             <div
               data-testid="choiceWheel"
-              className={wheelStyles.wheel}
+              className={`${wheelStyles.wheel} ${!canPick ? wheelStyles.wheelDisabled : ''}`}
               style={{ background: `conic-gradient(${gradient})`, transform: `rotate(${wheelRotation}deg)` }}
               onTransitionEnd={() => setSpinSegments(null)}
+              onClick={handlePick}
+              role="button"
+              tabIndex={0}
+              aria-label="Pick"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handlePick();
+                }
+              }}
             />
           </div>
         );
