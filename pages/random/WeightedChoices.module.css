@@ -30,6 +30,21 @@
   z-index: 1;
 }
 
+/* Per-row legend swatch matching the choice's wheel wedge */
+.choiceSwatch {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+/* Row has no wedge yet (blank label or weight 0): drawn as a hollow outline
+   (set inline, in the choice's colour) so the legend doesn't present a colour
+   the wheel isn't showing. */
+.choiceSwatchOffWheel {
+  opacity: 0.6;
+}
+
 /* Undo toast */
 .undoToast {
   position: fixed;

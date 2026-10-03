@@ -105,6 +105,8 @@ function ChoiceRow({
   label,
   weightValue,
   totalWeight,
+  color,
+  isOnWheel,
   isDrawn,
   onChangeLabel,
   onChangeWeight,
@@ -145,6 +147,15 @@ function ChoiceRow({
         label="Reorder choice"
         attributes={attributes}
         listeners={listeners}
+      />
+      {/* Legend swatch: ties this row to its wedge on the wheel. Its colour
+          is per-choice data, so it's the one inline style here. */}
+      <span
+        data-testid="choiceSwatch"
+        className={`${wheelStyles.choiceSwatch} ${isOnWheel ? '' : wheelStyles.choiceSwatchOffWheel}`}
+        data-on-wheel={isOnWheel}
+        style={isOnWheel ? { backgroundColor: color } : { boxShadow: `inset 0 0 0 2px ${color}` }}
+        aria-hidden="true"
       />
       <input
         type="text"
@@ -277,16 +288,56 @@ function GroupHeader({ id, groupName, isExpanded, onToggleExpand, onRename, onDe
   );
 }
 
-const WHEEL_COLORS = ['#4fc3f7', '#81d4fa', '#0288d1', '#26c6da', '#4dd0e1', '#0097a7'];
+// Distinct categorical hues for the dark page background, ordered so
+// consecutive entries stay distinguishable under common colour-vision
+// deficiencies. Past eight choices the hues repeat.
+const WHEEL_COLORS = [
+  '#3987e5',
+  '#d95926',
+  '#199e70',
+  '#c98500',
+  '#d55181',
+  '#008300',
+  '#9085e9',
+  '#e66767',
+];
 
-function buildWheelSegments(choices) {
-  const total = choices.reduce((sum, c) => sum + c.weight, 0);
+// Colour is keyed to a choice's position in the full group list, not its
+// position in the (possibly raffle-shrunk) pool, so a choice keeps its
+// colour as others are drawn and its row swatch always matches its wedge.
+function buildChoiceColors(choices) {
+  return new Map(choices.map((c, idx) => [c.id, WHEEL_COLORS[idx % WHEEL_COLORS.length]]));
+}
+
+// Wedges don't always touch their palette neighbour: the wheel is a circle
+// (last touches first), raffle draws and blank or weight-0 rows remove
+// wedges from the middle, and past eight choices a colour repeats. A thin
+// page-coloured gap between every pair of wedges keeps any two touching
+// wedges apart, whatever their colours.
+const WHEEL_SEPARATOR_COLOR = '#1a1a2e';
+const WHEEL_SEPARATOR_DEG = 1;
+
+function buildWheelGradient(segments) {
+  const visible = segments.filter((s) => s.end > s.start);
+  if (visible.length === 0) return '#2a2a3d 0deg 360deg';
+  if (visible.length === 1) return `${visible[0].color} 0deg 360deg`;
+  return visible
+    .map((s) => {
+      // Never let the gap eat more than a quarter of a thin wedge.
+      const gapStart = s.end - Math.min(WHEEL_SEPARATOR_DEG, (s.end - s.start) / 4);
+      return `${s.color} ${s.start}deg ${gapStart}deg, ${WHEEL_SEPARATOR_COLOR} ${gapStart}deg ${s.end}deg`;
+    })
+    .join(', ');
+}
+
+function buildWheelSegments(pool, colorById) {
+  const total = pool.reduce((sum, c) => sum + c.weight, 0);
   let cursor = 0;
-  return choices.map((choice, idx) => {
+  return pool.map((choice) => {
     const sweep = total > 0 ? (choice.weight / total) * 360 : 0;
     const segment = {
       id: choice.id,
-      color: WHEEL_COLORS[idx % WHEEL_COLORS.length],
+      color: colorById.get(choice.id),
       start: cursor,
       end: cursor + sweep,
     };
@@ -414,6 +465,7 @@ export default function WeightedChoices() {
   const canPick =
     validChoices.length >= 2 && remainingValidChoices.some((c) => c.weight > 0);
   const expandedHistory = history[expandedGroupId] || [];
+  const choiceColors = buildChoiceColors(expandedChoices);
 
   const [ghostKeyChoice, setGhostKeyChoice] = useState(0);
   const [ghostKeyGroup, setGhostKeyGroup] = useState(0);
@@ -597,6 +649,14 @@ export default function WeightedChoices() {
     [groups, expandedGroupId, updateGroupChoices],
   );
 
+  // What the wheel is drawing right now: the frozen pre-pick snapshot while
+  // a spin animates, else the live pool. Row swatches read from this same
+  // list so they can never disagree with the wheel, even mid-spin.
+  const wheelSegments = spinSegments || buildWheelSegments(remainingValidChoices, choiceColors);
+  const wheelColorById = new Map(
+    wheelSegments.filter((s) => s.end > s.start).map((s) => [s.id, s.color]),
+  );
+
   const handlePick = () => {
     const valid = expandedChoices.filter((c) => c.label.trim());
     if (valid.length < 2) return;
@@ -627,7 +687,7 @@ export default function WeightedChoices() {
       }));
     }
 
-    const segments = buildWheelSegments(pool);
+    const segments = buildWheelSegments(pool, choiceColors);
     const chosenSegment = segments.find((s) => s.id === chosen.id);
     const center = (chosenSegment.start + chosenSegment.end) / 2;
     setSpinSegments(segments);
@@ -637,11 +697,7 @@ export default function WeightedChoices() {
   return (
     <div className={styles.container}>
       {(() => {
-        const wheelSegments = spinSegments || buildWheelSegments(remainingValidChoices);
-        const gradient =
-          wheelSegments.length > 0
-            ? wheelSegments.map((s) => `${s.color} ${s.start}deg ${s.end}deg`).join(', ')
-            : '#2a2a3d 0deg 360deg';
+        const gradient = buildWheelGradient(wheelSegments);
         return (
           <div className={wheelStyles.wheelWrap}>
             <div className={wheelStyles.wheelPointer} />
@@ -712,19 +768,24 @@ export default function WeightedChoices() {
                         items={group.choices.map((c) => c.id)}
                         strategy={verticalListSortingStrategy}
                       >
-                        {group.choices.map((choice) => (
-                          <ChoiceRow
-                            key={choice.id}
-                            id={choice.id}
-                            label={choice.label}
-                            weightValue={choice.weight}
-                            totalWeight={totalWeight}
-                            isDrawn={!!group.noReplacement && drawnSet.has(choice.id)}
-                            onChangeLabel={(l) => handleChangeLabel(group.id, choice.id, l)}
-                            onChangeWeight={(w) => handleChangeWeight(group.id, choice.id, w)}
-                            onDelete={() => handleDeleteChoice(group.id, choice.id)}
-                          />
-                        ))}
+                        {group.choices.map((choice) => {
+                          const isDrawn = !!group.noReplacement && drawnSet.has(choice.id);
+                          return (
+                            <ChoiceRow
+                              key={choice.id}
+                              id={choice.id}
+                              label={choice.label}
+                              weightValue={choice.weight}
+                              totalWeight={totalWeight}
+                              color={wheelColorById.get(choice.id) ?? choiceColors.get(choice.id)}
+                              isOnWheel={wheelColorById.has(choice.id)}
+                              isDrawn={isDrawn}
+                              onChangeLabel={(l) => handleChangeLabel(group.id, choice.id, l)}
+                              onChangeWeight={(w) => handleChangeWeight(group.id, choice.id, w)}
+                              onDelete={() => handleDeleteChoice(group.id, choice.id)}
+                            />
+                          );
+                        })}
                       </SortableContext>
                       <div className={styles.choiceRow}>
                         <input
