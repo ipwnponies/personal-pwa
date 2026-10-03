@@ -326,6 +326,7 @@ export default function WeightedChoices() {
   });
 
   const [result, setResult] = useState(null);
+  const resultRef = useRef(null);
   const [wheelRotation, setWheelRotation] = useState(0);
   // The wheel's CSS transform animates for 3s (see .wheel's transition), but
   // the gradient it's animating toward is a plain style prop that would
@@ -368,6 +369,12 @@ export default function WeightedChoices() {
   }, [groups]);
 
   useEffect(() => () => clearTimeout(undoTimerRef.current), []);
+
+  useEffect(() => {
+    if (result) {
+      resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [result]);
 
   const showUndoToast = useCallback((message, onUndo) => {
     clearTimeout(undoTimerRef.current);
@@ -759,7 +766,7 @@ export default function WeightedChoices() {
       </button>
 
       {result && (
-        <div className={styles.result}>
+        <div ref={resultRef} className={styles.result}>
           <span className={styles.resultBadge}>{result.label}</span>
           <div className={styles.resultSum}>{result.percent}% chance</div>
           <ShareResultButton text={`${result.label} (${result.percent}% chance)`} />
